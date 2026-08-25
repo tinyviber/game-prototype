@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Demo 05 — The Dam That Breathes</title>
+<style>
+  :root{ --ink:#26313b; --panel:#ffffff; --line:#dfe6ec; --accent:#1f7a9e; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:"Segoe UI",system-ui,sans-serif; background:#eef2f6; color:var(--ink); }
+  header{ display:flex; align-items:baseline; gap:16px; padding:10px 18px; background:var(--panel); border-bottom:1px solid var(--line); }
+  header h1{ font-size:17px; margin:0; } header a{ color:#7a8794; font-size:13px; text-decoration:none; }
+  header .tag{ font-size:11px; background:#e0f0f6; color:var(--accent); padding:2px 8px; border-radius:10px; }
+  main{ display:flex; gap:16px; padding:16px; flex-wrap:wrap; }
+  .world{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; min-width:300px; flex:1; }
+  h2{ font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:#7a8794; margin:6px 0 8px; }
+  .rule-card{ display:flex; align-items:center; gap:6px; background:#f6f9fb; border:1px solid var(--line); border-radius:8px; padding:6px 8px; margin-bottom:6px; font-size:13px; }
+  .rule-card input{ width:52px; padding:3px; border:1px solid var(--line); border-radius:5px; }
+  .x-btn{ border:none; background:transparent; color:#c0392b; cursor:pointer; font-size:15px; }
+  .btn{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 14px; font-size:13px; cursor:pointer; }
+  .btn.primary{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn:disabled{ opacity:.45; cursor:default; }
+  .hud{ display:flex; gap:14px; font-size:13px; margin-bottom:8px; flex-wrap:wrap; }
+  #log{ background:#f6f9fb; border:1px solid var(--line); border-radius:8px; padding:8px; font-size:12px; height:120px; overflow-y:auto; white-space:pre-line; }
+  .hint{ font-size:11px; color:#7a8794; }
+  .gauge{ margin:4px 0; font-size:12px; }
+  .gauge .track{ width:200px; height:10px; background:#eceff2; border-radius:5px; display:inline-block; vertical-align:middle; margin-left:6px; position:relative; }
+  .gauge .track i{ display:block; height:100%; border-radius:5px; }
+  #win{ display:none; position:fixed; inset:0; background:rgba(255,255,255,.85); z-index:9; align-items:center; justify-content:center; flex-direction:column; }
+  #win.show{ display:flex; }
+</style>
+</head>
+<body>
+<header>
+  <h1>05 · The Dam That Breathes</h1>
+  <span class="tag">emergent flux &amp; equilibrium</span>
+  <a href="../index.html">← portal</a>
+</header>
+<main>
+  <div class="world">
+    <div class="hud">
+      <span>tick <b id="tick">0</b></span>
+      <span>level <b id="lv">48</b></span>
+      <span>sluice <b id="op">0%</b></span>
+      <span>wheel RPM <b id="rpm">0</b></span>
+      <span>gate <b id="gate">SHUT</b></span>
+    </div>
+    <svg id="svg" width="640" height="330" viewBox="0 0 640 330"></svg>
+  </div>
+  <div class="panel">
+    <h2>The Sluice Rules</h2>
+    <p class="hint">The river pulses forever. Write rules: <b>WHEN level &lt; X → sluice Y%</b>. First matching rule wins; a closed sluice feeds nothing. The wheel needs 8 steady ticks in the band — and the ford is crossable only while the river is low.</p>
+    <div id="rules"></div>
+    <button class="btn" id="addRule">+ rule</button>
+    <div style="margin-top:12px;display:flex;gap:8px;">
+      <button class="btn primary" id="run">▶ Run the river</button>
+      <button class="btn" id="step">Step</button>
+      <button class="btn" id="reset">↺ Reset</button>
+    </div>
+    <div style="margin-top:6px;"><button class="btn" id="hint">💡 hint</button></div>
+    <h2>River Diary</h2>
+    <div id="log">The reservoir is at 48. The sluice is closed — the river keeps coming. Somewhere downstream a wheel waits for steady water…</div>
+  </div>
+</main>
+<div id="win"><h1 style="color:var(--accent)">The wheel hums steady — the gate swings open!</h1><p>You tuned the dam until the valley breathed in balance. Reset to retune.</p></div>
+
+<script>
+"use strict";
+/* ============ PURE SIM CORE (no DOM) ============ */
+const SIM=(function(){
+  const AREA=4, BAND_LO=4, BAND_HI=6, STREAK_NEED=8, FORD_MAX=50, BURST=100;
+  const FORD=[8,9,10,11,12], GATE_X=18, START_X=3;
+  const inflow=t=>5+1.5*Math.sin(2*Math.PI*t/70);
+  const outflowOf=(level,open)=>Math.max(0,(open/100)*0.10*level);
+
+  function run(rules, plan, maxT){
+    let level=48, opening=0, streak=0, gate=false, win=false, bursted=false;
+    let px=START_X;
+    const events=[]; const push=m=>events.push({t:tick,m});
+    const moves=(plan&&plan.moves)||[];
+    const trace=[];
+    let tick;
+    for(tick=0; tick<(maxT||300) && !win && !bursted; tick++){
+      const before=level;
+      // rules: first match wins
+      for(const r of rules){ if(level<r.lt){ opening=r.open; break; } }
+      const out=outflowOf(level,opening);
+      level += (inflow(tick)-out)/AREA;
+      if(level>BURST){ bursted=true; push("The dam BURSTS — the valley floods! FAIL"); break; }
+      level=Math.max(0,level);
+      trace.push({t:tick,level:level,out:out});
+      const rpm=out;
+      if(rpm>=BAND_LO&&rpm<=BAND_HI) streak++; else streak=0;
+      if(streak>=STREAK_NEED&&!gate){ gate=true; push("The wheel hums steady — the gate grinds OPEN."); }
+      // explorer
+      for(const mv of moves){
+        if(mv[0]!==tick) continue;
+        if(mv[1]==='R'&&px<19) px++;
+        if(mv[1]==='L'&&px>0) px--;
+      }
+      if(FORD.includes(px)&&level>=FORD_MAX){ push("The river rose beneath you — you are swept back!"); px=START_X; }
+      if(px>=GATE_X&&gate){ win=true; push("You step through the mill gate. WIN"); }
+    }
+    return {win,tick,events,bursted,gate,level:level,opening,outflow:outflowOf(level,opening),streak,px,trace};
+  }
+  return {run,FORD,FORD_MAX,GATE_X,START_X,BURST,BAND_LO,BAND_HI,STREAK_NEED};
+})();
+if (typeof module!=='undefined' && module.exports) module.exports = { SIM };
+/* ============ UI ============ */
+function boot(){
+  const NS="http://www.w3.org/2000/svg";
+  const svg=document.getElementById("svg");
+  let rules=[{lt:50,open:30}];   // THE intuitive-but-wrong default: "be stingy when low"
+  let running=false, timer=null, tick=0, res=null, lastLogged=-1, playerMoves=[];
+  let wheelAngle=0;
+
+  function pip(x,y,scale){
+    const g2=document.createElementNS(NS,"g");
+    const body=document.createElementNS(NS,"ellipse");
+    body.setAttribute("cx",20); body.setAttribute("cy",24); body.setAttribute("rx",13); body.setAttribute("ry",12);
+    body.setAttribute("fill","#37c8a5"); body.setAttribute("stroke","#1e8a70"); body.setAttribute("stroke-width","2");
+    const a1=document.createElementNS(NS,"path");
+    a1.setAttribute("d","M20 12 Q20 6 25 5"); a1.setAttribute("stroke","#1e8a70"); a1.setAttribute("stroke-width","2"); a1.setAttribute("fill","none");
+    const tip=document.createElementNS(NS,"circle");
+    tip.setAttribute("cx",25); tip.setAttribute("cy",5); tip.setAttribute("r",2.6); tip.setAttribute("fill","#ffd166");
+    g2.append(body,a1,tip);
+    for(const px of [13.5,26.5]){
+      const e=document.createElementNS(NS,"ellipse");
+      e.setAttribute("cx",px); e.setAttribute("cy",21); e.setAttribute("rx",4.5); e.setAttribute("ry",5);
+      e.setAttribute("fill","#fff"); e.setAttribute("stroke","#1e8a70"); e.setAttribute("stroke-width","1.5");
+      const p=document.createElementNS(NS,"circle");
+      p.setAttribute("cx",px+(px<20?1:-1)); p.setAttribute("cy",21); p.setAttribute("r",2.3); p.setAttribute("fill","#222");
+      g2.append(e,p);
+    }
+    g2.setAttribute("transform","translate("+(x-20)+","+(y-24)+")");
+    return g2;
+  }
+
+  function render(){
+    while(svg.firstChild) svg.removeChild(svg.firstChild);
+    const level=res?res.level:48, open=res?res.opening:0, rpm=res?res.outflow:0;
+    const gnd=document.createElementNS(NS,"rect");
+    gnd.setAttribute("x",0); gnd.setAttribute("y",0); gnd.setAttribute("width",640); gnd.setAttribute("height",330);
+    gnd.setAttribute("fill","#e8efe4"); svg.appendChild(gnd);
+    // reservoir basin (left)
+    const basinX=40, basinW=150, waterH=level/100*120;
+    const basin=document.createElementNS(NS,"path");
+    basin.setAttribute("d","M"+basinX+" 250 h"+basinW+" v-130 a15 15 0 0 0 -15 -15 h-"+(basinW-30)+" a15 15 0 0 0 -15 15 z");
+    basin.setAttribute("fill","#cfd8d0"); svg.appendChild(basin);
+    const water=document.createElementNS(NS,"path");
+    const wTop=250-waterH;
+    water.setAttribute("d","M"+(basinX+4)+" 246 v-"+(waterH-4)+" h"+(basinW-8)+" v"+(waterH-4)+" z");
+    water.setAttribute("fill","#4aa8e8"); water.setAttribute("opacity",0.85); svg.appendChild(water);
+    const wl=document.createElementNS(NS,"line");
+    wl.setAttribute("x1",basinX+4); wl.setAttribute("y1",wTop); wl.setAttribute("x2",basinX+basinW-4); wl.setAttribute("y2",wTop);
+    wl.setAttribute("stroke","#dff3ff"); wl.setAttribute("stroke-width","2"); svg.appendChild(wl);
+    // burst line
+    const bl=document.createElementNS(NS,"line");
+    bl.setAttribute("x1",basinX); bl.setAttribute("y1",250-120); bl.setAttribute("x2",basinX+basinW); bl.setAttribute("y2",250-120);
+    bl.setAttribute("stroke","#c0392b"); bl.setAttribute("stroke-dasharray","4 3"); svg.appendChild(bl);
+    const blt=document.createElementNS(NS,"text");
+    blt.setAttribute("x",basinX+basinW-30); blt.setAttribute("y",250-124); blt.setAttribute("font-size","10"); blt.setAttribute("fill","#c0392b");
+    blt.textContent="BURST"; svg.appendChild(blt);
+    // dam + sluice
+    const dam=document.createElementNS(NS,"rect");
+    dam.setAttribute("x",basinX+basinW); dam.setAttribute("y",180); dam.setAttribute("width",16); dam.setAttribute("height",70);
+    dam.setAttribute("fill","#8b93a0"); svg.appendChild(dam);
+    const sluice=document.createElementNS(NS,"rect");
+    const sOpen=open/100*26;
+    sluice.setAttribute("x",basinX+basinW-8); sluice.setAttribute("y",230-sOpen); sluice.setAttribute("width",8); sluice.setAttribute("height",sOpen+4);
+    sluice.setAttribute("fill","#5b6b7a"); svg.appendChild(sluice);
+    // flume + wheel
+    const flume=document.createElementNS(NS,"rect");
+    flume.setAttribute("x",basinX+basinW+16); flume.setAttribute("y",238); flume.setAttribute("width",70); flume.setAttribute("height",8);
+    flume.setAttribute("fill","#9fb4c2"); svg.appendChild(flume);
+    if(res){ wheelAngle+=res.outflow*0.25; }
+    const wcx=basinX+basinW+16+70, wcy=238;
+    const wheel=document.createElementNS(NS,"g");
+    wheel.setAttribute("transform","translate("+wcx+","+wcy+") rotate("+wheelAngle+")");
+    const rim=document.createElementNS(NS,"circle");
+    rim.setAttribute("r",22); rim.setAttribute("fill","none"); rim.setAttribute("stroke","#7d6b52"); rim.setAttribute("stroke-width","5");
+    wheel.appendChild(rim);
+    for(let i=0;i<8;i++){
+      const sp=document.createElementNS(NS,"line");
+      sp.setAttribute("x1",0); sp.setAttribute("y1",0); sp.setAttribute("x2",22); sp.setAttribute("y2",0);
+      sp.setAttribute("stroke","#7d6b52"); sp.setAttribute("stroke-width","3");
+      sp.setAttribute("transform","rotate("+(i*45)+")");
+      wheel.appendChild(sp);
+    }
+    svg.appendChild(wheel);
+    // the strip: banks + river + ford
+    const stripY=270, cellW=30;
+    for(let c=0;c<20;c++){
+      const isFord=SIM.FORD.includes(c);
+      const r=document.createElementNS(NS,"rect");
+      r.setAttribute("x",c*cellW); r.setAttribute("y",stripY); r.setAttribute("width",cellW); r.setAttribute("height",36);
+      if(isFord){ r.setAttribute("fill",level<SIM.FORD_MAX?"#7fb6e0":"#3f6d94"); }
+      else if(c<8){ r.setAttribute("fill","#a9c795"); }
+      else { r.setAttribute("fill","#a9c795"); }
+      svg.appendChild(r);
+      if(isFord&&level<SIM.FORD_MAX){
+        const st=document.createElementNS(NS,"rect");
+        st.setAttribute("x",c*cellW+8); st.setAttribute("y",stripY-4); st.setAttribute("width",14); st.setAttribute("height",10);
+        st.setAttribute("fill","#8b7a63"); st.setAttribute("rx","3"); svg.appendChild(st);
+      }
+      if(c<8||c>12){
+        const gr=document.createElementNS(NS,"rect");
+        gr.setAttribute("x",c*cellW+2); gr.setAttribute("y",stripY+26); gr.setAttribute("width",cellW-4); gr.setAttribute("height",8);
+        gr.setAttribute("fill","#7fa06b"); svg.appendChild(gr);
+      }
+    }
+    // gate house (right)
+    const gx=SIM.GATE_X*cellW;
+    for(let i=0;i<3;i++){
+      const bar=document.createElementNS(NS,"rect");
+      bar.setAttribute("x",gx+6+i*8); bar.setAttribute("y",stripY+(res&&res.gate?-30:2)); bar.setAttribute("width",5); bar.setAttribute("height",32);
+      bar.setAttribute("fill","#3d4d5c"); svg.appendChild(bar);
+    }
+    const gl=document.createElementNS(NS,"text");
+    gl.setAttribute("x",gx); gl.setAttribute("y",stripY-8); gl.setAttribute("font-size","10"); gl.setAttribute("fill","#3d4d5c");
+    gl.textContent=(res&&res.gate)?"OPEN":"GATE"; svg.appendChild(gl);
+    // explorer
+    const px=res?res.px:SIM.START_X;
+    svg.appendChild(pip(px*cellW+15,stripY+2));
+    // labels
+    const l1=document.createElementNS(NS,"text");
+    l1.setAttribute("x",10); l1.setAttribute("y",20); l1.setAttribute("font-size","12"); l1.setAttribute("fill","#7a8794");
+    l1.textContent="The river pulses. The wheel needs 4–6 RPM for 8 steady ticks. The ford appears when the level drops below 50.";
+    svg.appendChild(l1);
+  }
+
+  function logLine(m){ const el=document.getElementById("log"); el.textContent=m+"\n"+el.textContent; }
+  function updateHud(){
+    document.getElementById("tick").textContent=tick;
+    document.getElementById("lv").textContent=(res?res.level:48).toFixed(1);
+    document.getElementById("op").textContent=(res?res.opening:0)+"%";
+    document.getElementById("rpm").textContent=(res?res.outflow:0).toFixed(2);
+    document.getElementById("gate").textContent=(res&&res.gate)?"OPEN":"SHUT";
+  }
+  function cfg(maxT){
+    return {rules:rules.map(r=>({lt:+r.lt,open:+r.open})), plan:{moves:playerMoves}, maxT};
+  }
+  function stepOnce(maxT){
+    res=SIM.run(cfg(maxT).rules,cfg(maxT).plan,cfg(maxT).maxT);
+    tick=res.tick;
+    for(const e of res.events){ if(e.t>lastLogged){ logLine("t"+e.t+": "+e.m); lastLogged=e.t; } }
+    if(res.bursted){ running=false; if(timer){clearInterval(timer);timer=null;} document.getElementById("run").textContent="▶ Run the river"; logLine("💥 The valley is flooded. Reset and open the sluice more."); }
+    if(res.win){ running=false; if(timer){clearInterval(timer);timer=null;} document.getElementById("run").textContent="▶ Run the river"; document.getElementById("win").classList.add("show"); }
+    render(); updateHud();
+  }
+  document.getElementById("run").onclick=()=>{
+    if(running){ running=false; clearInterval(timer); timer=null; document.getElementById("run").textContent="▶ Run the river"; return; }
+    tick=0; res=null; lastLogged=-1; playerMoves=[];
+    running=true; document.getElementById("run").textContent="⏸ Pause";
+    let t=0;
+    timer=setInterval(()=>{ t++; stepOnce(t); if(t>300){ running=false; clearInterval(timer); timer=null; document.getElementById("run").textContent="▶ Run the river"; } },90);
+  };
+  document.getElementById("step").onclick=()=>stepOnce(Math.max(1,tick+1));
+  document.getElementById("reset").onclick=()=>{
+    running=false; if(timer){clearInterval(timer);timer=null;}
+    tick=0; res=null; lastLogged=-1; playerMoves=[];
+    document.getElementById("run").textContent="▶ Run the river";
+    document.getElementById("win").classList.remove("show");
+    document.getElementById("log").textContent="The reservoir is at 48. The sluice is closed — the river keeps coming. Somewhere downstream a wheel waits for steady water…";
+    render(); updateHud();
+  };
+  document.getElementById("hint").onclick=()=>{
+    logLine("💡 The river finds its own level: open the sluice wide and the reservoir breathes around level 50 — the wheel hums in the band and the ford appears whenever it dips. Stingy sluices just drown the valley.");
+  };
+
+  function renderRules(){
+    const box=document.getElementById("rules");
+    box.innerHTML="";
+    rules.forEach((r,i)=>{
+      const card=document.createElement("div"); card.className="rule-card";
+      const l1=document.createElement("span"); l1.textContent="WHEN level <";
+      const in1=document.createElement("input"); in1.type="number"; in1.min=0; in1.max=100; in1.value=r.lt;
+      in1.onchange=()=>{ r.lt=Math.max(0,Math.min(100,parseInt(in1.value)||0)); };
+      const l2=document.createElement("span"); l2.textContent="→ sluice";
+      const in2=document.createElement("input"); in2.type="number"; in2.min=0; in2.max=100; in2.value=r.open;
+      in2.onchange=()=>{ r.open=Math.max(0,Math.min(100,parseInt(in2.value)||0)); };
+      const l3=document.createElement("span"); l3.textContent="%";
+      const x=document.createElement("button"); x.className="x-btn"; x.textContent="✕";
+      x.onclick=()=>{ rules.splice(i,1); if(!rules.length) rules.push({lt:50,open:30}); renderRules(); };
+      card.append(l1,in1,l2,in2,l3,x);
+      box.appendChild(card);
+    });
+  }
+  document.getElementById("addRule").onclick=()=>{ rules.push({lt:50,open:50}); renderRules(); };
+
+  const KEYDIR={ArrowLeft:'L',ArrowRight:'R',a:'L',d:'R'};
+  window.addEventListener("keydown",e=>{
+    const k=KEYDIR[e.key]||KEYDIR[e.key.toLowerCase()];
+    if(!k) return;
+    e.preventDefault();
+    playerMoves.push([tick,k]);
+    stepOnce(Math.max(1,tick+1));
+  });
+  renderRules(); render(); updateHud();
+}
+if (typeof window!=='undefined' && typeof document!=='undefined') boot();
+</script>
+</body>
+</html>

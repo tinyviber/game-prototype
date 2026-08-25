@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Demo 01 — The Gravity Amendment</title>
+<style>
+  :root{ --ink:#26313b; --panel:#ffffff; --line:#dfe6ec; --accent:#18a07f; --accent2:#ff9f43; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:"Segoe UI",system-ui,sans-serif; background:#eef2f6; color:var(--ink); }
+  header{ display:flex; align-items:baseline; gap:16px; padding:10px 18px; background:var(--panel); border-bottom:1px solid var(--line); }
+  header h1{ font-size:17px; margin:0; } header a{ color:#7a8794; font-size:13px; text-decoration:none; }
+  header .tag{ font-size:11px; background:#e5f6f0; color:var(--accent); padding:2px 8px; border-radius:10px; }
+  main{ display:flex; gap:16px; padding:16px; flex-wrap:wrap; }
+  .world{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; min-width:280px; flex:1; }
+  h2{ font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:#7a8794; margin:6px 0 8px; }
+  .law-card{ display:flex; align-items:center; gap:6px; background:#f6f9fb; border:1px solid var(--line); border-radius:8px; padding:6px 8px; margin-bottom:6px; }
+  .law-card .t{ width:64px; }
+  .law-card input{ width:52px; padding:3px; border:1px solid var(--line); border-radius:5px; font-size:13px; }
+  .dir-btn{ width:34px; height:30px; border:1px solid var(--line); background:#fff; border-radius:6px; font-size:14px; cursor:pointer; }
+  .dir-btn.on{ background:var(--accent); color:#fff; border-color:var(--accent); }
+  .x-btn{ border:none; background:transparent; color:#c0392b; cursor:pointer; font-size:15px; }
+  .btn{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 14px; font-size:13px; cursor:pointer; }
+  .btn.primary{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn:disabled{ opacity:.45; cursor:default; }
+  .hud{ display:flex; gap:14px; font-size:13px; margin-bottom:8px; }
+  .hud b{ color:var(--accent); }
+  #log{ background:#f6f9fb; border:1px solid var(--line); border-radius:8px; padding:8px; font-size:12px; height:120px; overflow-y:auto; white-space:pre-line; }
+  .hint{ font-size:11px; color:#7a8794; }
+  #win{ display:none; position:fixed; inset:0; background:rgba(255,255,255,.85); z-index:9; align-items:center; justify-content:center; flex-direction:column; }
+  #win.show{ display:flex; }
+</style>
+</head>
+<body>
+<header>
+  <h1>01 · The Gravity Amendment</h1>
+  <span class="tag">world-law mutation</span>
+  <a href="../index.html">← portal</a>
+</header>
+<main>
+  <div class="world">
+    <div class="hud"><span>tick <b id="tick">0</b></span><span>law <b id="law">▼</b></span><span>gate <b id="gate">SHUT</b></span></div>
+    <svg id="svg" width="640" height="480" viewBox="0 0 640 480"></svg>
+  </div>
+  <div class="panel">
+    <h2>The Law-Stone Edicts</h2>
+    <p class="hint">Amend the law of falling. Later laws override earlier ones. Press Run and watch the whole cavern obey.</p>
+    <div id="laws"></div>
+    <button class="btn" id="addLaw">+ new edict</button>
+    <div style="margin-top:12px;display:flex;gap:8px;">
+      <button class="btn primary" id="run">▶ Run</button>
+      <button class="btn" id="step">Step</button>
+      <button class="btn" id="reset">↺ Reset</button>
+    </div>
+    <div style="margin-top:6px;"><button class="btn" id="hint">💡 hint</button></div>
+    <h2>World Diary</h2>
+    <div id="log">The law is DOWN — the default. The boulder rests on its shelf. The water pool sleeps. The gate stays shut; the exit glimmers behind it.</div>
+  </div>
+</main>
+<div id="win"><h1 style="color:var(--accent)">The gate swings open!</h1><p>You rewrote the law of the cavern. Press Reset to amend again.</p></div>
+
+<script>
+"use strict";
+/* ============ PURE SIM CORE (no DOM) ============ */
+const SIM = (function(){
+  const W=16, H=12;
+  const DIRS={U:[0,-1],D:[0,1],L:[-1,0],R:[1,0]};
+  const wall=new Set();
+  function addWall(x,y){ wall.add(x+","+y); }
+  for(let x=0;x<W;x++){ addWall(x,0); addWall(x,H-1); }
+  for(let y=0;y<H;y++){ addWall(0,y); addWall(W-1,y); }
+  for(let x=3;x<=6;x++) addWall(x,4);            // the shelf under the boulder
+  const BOULDER={x:4,y:3}, CHAR={x:6,y:10};
+  const WATER=[{x:12,y:5},{x:13,y:5},{x:14,y:5}];
+  const P1={x:10,y:10};   // boulder plate (latches)
+  const P2={x:1,y:5};     // character plate (live)
+  const GATE={x:1,y:3}, EXIT={x:1,y:2};
+
+  function isWall(x,y){ return wall.has(x+","+y); }
+  function isWater(x,y){ return WATER.some(w=>w.x===x&&w.y===y); }
+  function isChar(x,y){ return CHAR.x===x&&CHAR.y===y; }
+  function isBoulder(x,y){ return BOULDER.x===x&&BOULDER.y===y; }
+  function gateOpen(st){ return st.gate; }
+
+  function freeCell(x,y,st){
+    if(isWall(x,y)) return false;
+    if(isWater(x,y)) return false;
+    if(isChar(x,y)) return false;
+    if(isBoulder(x,y)) return false;
+    if(GATE.x===x&&GATE.y===y&&!st.gate) return false;
+    return true;
+  }
+
+  function lawAt(laws,t){
+    let cur='D', curT=-1;
+    for(const L of laws){ if(L.t<=t && L.t>=curT){ cur=L.dir; curT=L.t; } }
+    return cur;
+  }
+
+  // move a droplet perpendicular when blocked
+  function waterStep(ls){
+    const perp = (ls==='U'||ls==='D') ? [['L',DIRS.L],['R',DIRS.R]] : [['U',DIRS.U],['D',DIRS.D]];
+    for(const w of WATER){
+      const d=DIRS[ls], tx=w.x+d[0], ty=w.y+d[1];
+      let moved=false;
+      if(freeCell(tx,ty,{gate:false})||(tx===GATE.x&&ty===GATE.y)){
+        // water may fill open gate space (harmless)
+        if(!isWall(tx,ty)&&!isChar(tx,ty)&&!isBoulder(tx,ty)&&!isWater(tx,ty)){ w.x=tx; w.y=ty; moved=true; }
+      }
+      if(!moved){
+        for(const [nm,dd] of perp){
+          const nx=w.x+dd[0], ny=w.y+dd[1];
+          if(!isWall(nx,ny)&&!isChar(nx,ny)&&!isBoulder(nx,ny)&&!isWater(nx,ny)&&!(GATE.x===nx&&GATE.y===ny)){
+            w.x=nx; w.y=ny; moved=true; break;
+          }
+        }
+      }
+    }
+  }
+
+  function run(laws, plan){
+    // deep-copy mutable state
+    BOULDER.x=4; BOULDER.y=3; CHAR.x=6; CHAR.y=10;
+    WATER.length=0; WATER.push({x:12,y:5},{x:13,y:5},{x:14,y:5});
+    let st={gate:false, latched:false, win:false, tick:0, events:[]};
+    const moves=(plan&&plan.moves)||[];
+    const maxT=(plan&&plan.maxT)||80;
+    const push=(m)=>st.events.push("t"+st.tick+": "+m);
+
+    for(let t=0;t<=maxT && !st.win;t++){
+      st.tick=t;
+      const ls=lawAt(laws,t);
+      const last=lawAt(laws,t-1);
+      if(t>0 && ls!==last) push("LAW AMENDED → "+ls);
+      if(t===0) push("LAW IN FORCE: "+ls);
+
+      // 1. boulder
+      const d=DIRS[ls];
+      const bx=BOULDER.x+d[0], by=BOULDER.y+d[1];
+      if(freeCell(bx,by,st)){ BOULDER.x=bx; BOULDER.y=by; }
+      // 2. water
+      waterStep(ls);
+      // 3. plates & gate
+      if(BOULDER.x===P1.x&&BOULDER.y===P1.y&&!st.latched){ st.latched=true; push("The boulder clunks onto the plate — CLICK. (latched)"); }
+      const charOnP2 = (CHAR.x===P2.x&&CHAR.y===P2.y);
+      if(st.latched&&charOnP2&&!st.gate){ st.gate=true; push("The gate swings OPEN (boulder plate + your weight)."); }
+      // 4. character move
+      const mv=moves.filter(m=>m[0]===t);
+      for(const m of mv){
+        const k=m[1]; const dd=DIRS[k];
+        const nx=CHAR.x+dd[0], ny=CHAR.y+dd[1];
+        if(nx>=0&&nx<W&&ny>=0&&ny<H){
+          const blocked = isWall(nx,ny)||isWater(nx,ny)||isBoulder(nx,ny)||(GATE.x===nx&&GATE.y===ny&&!st.gate);
+          if(!blocked){ CHAR.x=nx; CHAR.y=ny; }
+        }
+      }
+      // 5. win
+      if(CHAR.x===EXIT.x&&CHAR.y===EXIT.y){ st.win=true; push("You step into the light of the exit. WIN"); }
+    }
+    return { win:st.win, tick:st.tick, gate:st.gate, latched:st.latched, events:st.events,
+             boulder:{x:BOULDER.x,y:BOULDER.y}, char:{x:CHAR.x,y:CHAR.y}, water:WATER.map(w=>({x:w.x,y:w.y})) };
+  }
+
+  return { run, lawAt, W, H, wallCells:[...wall], P1, P2, GATE, EXIT,
+           state:()=>({boulder:{x:BOULDER.x,y:BOULDER.y},char:{x:CHAR.x,y:CHAR.y},water:WATER.map(w=>({x:w.x,y:w.y}))}) };
+})();
+if (typeof module!=='undefined' && module.exports) module.exports = { SIM };
+/* ============ UI ============ */
+function boot(){
+  const NS="http://www.w3.org/2000/svg";
+  const svg=document.getElementById("svg");
+  let laws=[{t:0,dir:'D'}];          // THE intuitive-but-wrong default program
+  let running=false, timer=null, tick=0, simState=null, playerMoves=[];
+
+  function pip(g){
+    const s=40;
+    const g2=document.createElementNS(NS,"g");
+    const body=document.createElementNS(NS,"ellipse");
+    body.setAttribute("cx",s/2); body.setAttribute("cy",s/2+4); body.setAttribute("rx",13); body.setAttribute("ry",12);
+    body.setAttribute("fill","#37c8a5"); body.setAttribute("stroke","#1e8a70"); body.setAttribute("stroke-width","2");
+    const a1=document.createElementNS(NS,"path");
+    a1.setAttribute("d","M"+(s/2)+" "+(s/2-8)+" Q"+(s/2)+" "+(s/2-16)+" "+(s/2+5)+" "+(s/2-17));
+    a1.setAttribute("stroke","#1e8a70"); a1.setAttribute("stroke-width","2"); a1.setAttribute("fill","none");
+    const tip=document.createElementNS(NS,"circle");
+    tip.setAttribute("cx",s/2+5); tip.setAttribute("cy",s/2-17); tip.setAttribute("r",2.6); tip.setAttribute("fill","#ffd166");
+    g2.append(body,a1,tip);
+    for(const [ex,px] of [[0,13.5],[1,26.5]]){
+      const e=document.createElementNS(NS,"ellipse");
+      e.setAttribute("cx",px); e.setAttribute("cy",s/2+1); e.setAttribute("rx",4.5); e.setAttribute("ry",5);
+      e.setAttribute("fill","#fff"); e.setAttribute("stroke","#1e8a70"); e.setAttribute("stroke-width","1.5");
+      const p=document.createElementNS(NS,"circle");
+      p.setAttribute("cx",px+(ex?1:-1)); p.setAttribute("cy",s/2+1); p.setAttribute("r",2.3); p.setAttribute("fill","#222");
+      const sh=document.createElementNS(NS,"circle");
+      sh.setAttribute("cx",px+(ex?2:0)); sh.setAttribute("cy",s/2-1); sh.setAttribute("r",0.9); sh.setAttribute("fill","#fff");
+      g2.append(e,p,sh);
+    }
+    const leg=document.createElementNS(NS,"path");
+    leg.setAttribute("d","M"+(s/2-5)+" "+(s/2+13)+" Q"+(s/2-8)+" "+(s/2+17)+" "+(s/2-3)+" "+(s/2+16));
+    leg.setAttribute("stroke","#1e8a70"); leg.setAttribute("stroke-width","2"); leg.setAttribute("fill","none");
+    g2.append(leg);
+    g2.setAttribute("transform","translate("+(g.x*40-0)+","+(g.y*40-0)+")");
+    return g2;
+  }
+
+  function render(){
+    while(svg.firstChild) svg.removeChild(svg.firstChild);
+    const st=SIM.state();
+    // floor
+    const floor=document.createElementNS(NS,"rect");
+    floor.setAttribute("x",0); floor.setAttribute("y",0); floor.setAttribute("width",640); floor.setAttribute("height",480);
+    floor.setAttribute("fill","#f2f0ea");
+    svg.appendChild(floor);
+    // water
+    for(const w of st.water){
+      const c=document.createElementNS(NS,"circle");
+      c.setAttribute("cx",w.x*40+20); c.setAttribute("cy",w.y*40+20); c.setAttribute("r",14);
+      c.setAttribute("fill","#4aa8e8"); c.setAttribute("opacity",0.85);
+      svg.appendChild(c);
+    }
+    // walls
+    for(const key of SIM.wallCells){
+      const [x,y]=key.split(",").map(Number);
+      const r=document.createElementNS(NS,"rect");
+      r.setAttribute("x",x*40); r.setAttribute("y",y*40); r.setAttribute("width",40); r.setAttribute("height",40);
+      r.setAttribute("fill","#5b6b7a"); r.setAttribute("stroke","#46535f"); r.setAttribute("stroke-width","2");
+      svg.appendChild(r);
+    }
+    // plates
+    for(const [px,py,label,latched] of [[SIM.P1.x,SIM.P1.y,"P1",simState&&simState.latched],[SIM.P2.x,SIM.P2.y,"P2",false]]){
+      const c=document.createElementNS(NS,"circle");
+      c.setAttribute("cx",px*40+20); c.setAttribute("cy",py*40+20); c.setAttribute("r",13);
+      c.setAttribute("fill",(latched||(px===SIM.P2.x&&simState&&simState.char.x===px&&simState.char.y===py))?"#f5b642":"#c8cfd6");
+      c.setAttribute("stroke","#8a93a0"); c.setAttribute("stroke-width","2");
+      svg.appendChild(c);
+      const tx=document.createElementNS(NS,"text");
+      tx.setAttribute("x",px*40+20); tx.setAttribute("y",py*40+24); tx.setAttribute("text-anchor","middle");
+      tx.setAttribute("font-size","10"); tx.setAttribute("fill","#333"); tx.textContent=label;
+      svg.appendChild(tx);
+    }
+    // gate
+    const gateOpen=simState?simState.gate:false;
+    const gx=SIM.GATE.x*40, gy=SIM.GATE.y*40;
+    for(let i=0;i<3;i++){
+      const bar=document.createElementNS(NS,"rect");
+      const rise=gateOpen?34:0;
+      bar.setAttribute("x",gx+6+i*11); bar.setAttribute("y",gy+4+rise); bar.setAttribute("width",6); bar.setAttribute("height",32);
+      bar.setAttribute("fill","#3d4d5c"); bar.setAttribute("rx",2);
+      svg.appendChild(bar);
+    }
+    // exit arch
+    const ex=document.createElementNS(NS,"path");
+    ex.setAttribute("d","M"+(SIM.EXIT.x*40+6)+" "+(SIM.EXIT.y*40+38)+" v-20 a14 14 0 0 1 28 0 v20 z");
+    ex.setAttribute("fill","#ffe9b8"); ex.setAttribute("stroke","#e8b23a");
+    svg.appendChild(ex);
+    // boulder
+    const b=document.createElementNS(NS,"circle");
+    b.setAttribute("cx",st.boulder.x*40+20); b.setAttribute("cy",st.boulder.y*40+20); b.setAttribute("r",15);
+    b.setAttribute("fill","#9a8b7a"); b.setAttribute("stroke","#6f6252"); b.setAttribute("stroke-width","2");
+    svg.appendChild(b);
+    // character (Pip)
+    svg.appendChild(pip(st.char));
+  }
+
+  function logLine(msg){
+    const el=document.getElementById("log");
+    el.textContent=msg+"\n"+el.textContent;
+  }
+  function updateHud(){
+    document.getElementById("tick").textContent=tick;
+    document.getElementById("law").textContent=lawArrow(lawAtTick());
+    document.getElementById("gate").textContent=(simState&&simState.gate)?"OPEN":"SHUT";
+  }
+  function lawArrow(d){ return {U:'▲',D:'▼',L:'◀',R:'▶'}[d]; }
+  function lawAtTick(){ return SIM.lawAt(laws,tick); }
+
+  function stopRun(){ running=false; if(timer){clearInterval(timer);timer=null;} document.getElementById("run").textContent="▶ Run"; }
+  function stepSim(){
+    simState=SIM.run(laws,{moves:playerMoves,maxT:tick});
+    tick=simState.tick;
+    for(const e of simState.events) logLine(e);
+    if(simState.win){ stopRun(); document.getElementById("win").classList.add("show"); }
+    render(); updateHud();
+  }
+  function startRun(){
+    if(running) return;
+    tick=0; simState=null; playerMoves=[];
+    running=true; document.getElementById("run").textContent="⏸ Pause";
+    timer=setInterval(()=>{
+      simState=SIM.run(laws,{moves:playerMoves,maxT:tick+1});
+      tick=simState.tick;
+      for(const e of simState.events) logLine(e);
+      if(simState.win){ stopRun(); document.getElementById("win").classList.add("show"); }
+      render(); updateHud();
+    },250);
+  }
+
+  // keyboard: live control
+  const KEYDIR={ArrowUp:'U',ArrowDown:'D',ArrowLeft:'L',ArrowRight:'R',w:'U',s:'D',a:'L',d:'R'};
+  window.addEventListener("keydown",e=>{
+    const k=KEYDIR[e.key]||KEYDIR[e.key.toLowerCase()];
+    if(!k) return;
+    e.preventDefault();
+    playerMoves.push([tick,k]);
+    simState=SIM.run(laws,{moves:playerMoves,maxT:tick});
+    tick=simState.tick;
+    for(const ev of simState.events) logLine(ev);
+    if(simState.win){ stopRun(); document.getElementById("win").classList.add("show"); }
+    render(); updateHud();
+  });
+
+  function renderLaws(){
+    const box=document.getElementById("laws");
+    box.innerHTML="";
+    laws.forEach((L,i)=>{
+      const card=document.createElement("div"); card.className="law-card";
+      const tlab=document.createElement("span"); tlab.className="t"; tlab.textContent="t=";
+      const tin=document.createElement("input"); tin.type="number"; tin.min=0; tin.value=L.t;
+      tin.onchange=()=>{ L.t=Math.max(0,parseInt(tin.value)||0); };
+      const dirBox=document.createElement("span");
+      for(const d of ['U','D','L','R']){
+        const b=document.createElement("button"); b.className="dir-btn"+(L.dir===d?" on":""); b.textContent=lawArrow(d);
+        b.onclick=()=>{ L.dir=d; renderLaws(); };
+        dirBox.appendChild(b);
+      }
+      const x=document.createElement("button"); x.className="x-btn"; x.textContent="✕";
+      x.onclick=()=>{ laws.splice(i,1); if(!laws.length) laws.push({t:0,dir:'D'}); renderLaws(); };
+      card.append(tlab,tin,dirBox,x);
+      box.appendChild(card);
+    });
+  }
+  document.getElementById("addLaw").onclick=()=>{
+    const lastT=laws.length?Math.max(...laws.map(L=>L.t)):0;
+    laws.push({t:lastT+1,dir:'D'}); renderLaws();
+  };
+  document.getElementById("run").onclick=()=>{ running?stopRun():startRun(); };
+  document.getElementById("step").onclick=stepSim;
+  document.getElementById("reset").onclick=()=>{
+    stopRun(); tick=0; simState=null; playerMoves=[];
+    document.getElementById("log").textContent="The law is DOWN — the default. The boulder rests on its shelf. The water pool sleeps. The gate stays shut; the exit glimmers behind it.";
+    document.getElementById("win").classList.remove("show");
+    render(); updateHud();
+  };
+  document.getElementById("hint").onclick=()=>{
+    logLine("💡 Hint: send the boulder EAST off its shelf, then DOWN onto the floor, then WEST so it rolls across the plate — while YOU stand on the small plate in the alcove. Two keys, one gate.");
+  };
+  renderLaws(); render(); updateHud();
+}
+if (typeof window!=='undefined' && typeof document!=='undefined') boot();
+</script>
+</body>
+</html>

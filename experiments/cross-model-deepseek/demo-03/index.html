@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Demo 03 — Echo Canyon</title>
+<style>
+  :root{ --ink:#26313b; --panel:#ffffff; --line:#dfe6ec; --accent:#2f6fd0; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:"Segoe UI",system-ui,sans-serif; background:#eef2f6; color:var(--ink); }
+  header{ display:flex; align-items:baseline; gap:16px; padding:10px 18px; background:var(--panel); border-bottom:1px solid var(--line); }
+  header h1{ font-size:17px; margin:0; } header a{ color:#7a8794; font-size:13px; text-decoration:none; }
+  header .tag{ font-size:11px; background:#e7effb; color:var(--accent); padding:2px 8px; border-radius:10px; }
+  main{ display:flex; gap:16px; padding:16px; flex-wrap:wrap; }
+  .world{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; min-width:300px; flex:1; }
+  h2{ font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:#7a8794; margin:6px 0 8px; }
+  #tape{ display:flex; gap:4px; flex-wrap:wrap; margin:8px 0; }
+  .slot{ width:34px; height:38px; border:1px solid var(--line); border-radius:6px; background:#f6f9fb; text-align:center; line-height:38px; font-size:15px; cursor:pointer; position:relative; }
+  .slot.cur{ border-color:var(--accent); background:#e7effb; }
+  .slot .flag{ position:absolute; left:2px; right:2px; bottom:2px; height:4px; border-radius:2px; }
+  .flag.b1{ background:#18a07f; } .flag.b2{ background:#f5b642; }
+  .btn{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 14px; font-size:13px; cursor:pointer; }
+  .btn.primary{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn:disabled{ opacity:.45; cursor:default; }
+  .hud{ display:flex; gap:14px; font-size:13px; margin-bottom:8px; }
+  #log{ background:#f6f9fb; border:1px solid var(--line); border-radius:8px; padding:8px; font-size:12px; height:120px; overflow-y:auto; white-space:pre-line; }
+  .hint{ font-size:11px; color:#7a8794; }
+  #win{ display:none; position:fixed; inset:0; background:rgba(255,255,255,.85); z-index:9; align-items:center; justify-content:center; flex-direction:column; }
+  #win.show{ display:flex; }
+</style>
+</head>
+<body>
+<header>
+  <h1>03 · Echo Canyon</h1>
+  <span class="tag">temporal &amp; state echoes</span>
+  <a href="../index.html">← portal</a>
+</header>
+<main>
+  <div class="world">
+    <div class="hud"><span>frame <b id="tick">0</b>/10</span><span>bridge <b id="bridge">UP</b></span><span>door <b id="door">SHUT</b></span></div>
+    <svg id="svg" width="644" height="460" viewBox="0 0 644 460"></svg>
+  </div>
+  <div class="panel">
+    <h2>The Totem's Song (10 frames)</h2>
+    <p class="hint">Your echo dances this song forever. Holding the <b style="color:#18a07f">spirit bridge</b> frame = bridge down; holding the <b style="color:#f5b642">spirit door</b> frame = door open. Record it live (REC), or click slots to edit the arrows.</p>
+    <div id="tape"></div>
+    <div style="display:flex;gap:8px;margin:8px 0;">
+      <button class="btn" id="rec">● REC</button>
+      <button class="btn primary" id="run">▶ Play the song</button>
+      <button class="btn" id="slow">🐢 slow</button>
+      <button class="btn" id="reset">↺ Reset</button>
+    </div>
+    <div style="margin-bottom:6px;"><button class="btn" id="hint">💡 hint</button></div>
+    <h2>World Diary</h2>
+    <div id="log">The totem hums an old song: your echo shuffles left and mumbles in the corner. The bridge stays up. The door stays shut.</div>
+  </div>
+</main>
+<div id="win"><h1 style="color:var(--accent)">You step through the spirit door!</h1><p>Your own echo held the world open for you. Reset to write a new song.</p></div>
+
+<script>
+"use strict";
+/* ============ PURE SIM CORE (no DOM) ============ */
+const SIM=(function(){
+  const W=14,H=10;
+  const chasm=new Set();
+  for(let y=2;y<=8;y++){ chasm.add("7,"+y); chasm.add("8,"+y); }
+  const B1={x:6,y:7}, B2={x:4,y:5}, DOOR={x:11,y:7}, START={x:5,y:7};
+  const isChasm=(x,y)=>chasm.has(x+","+y);
+
+  function run(tape, plan, maxT){
+    let px=START.x, py=START.y, win=false, fell=0;
+    const events=[]; const push=m=>events.push({t:tick,m});
+    const moves=(plan&&plan.moves)||[];
+    let tick;
+    for(tick=0; tick<(maxT||60) && !win; tick++){
+      const fr=tick%tape.length;
+      const echo=tape[fr];
+      const bridgeDown=(echo.x===B1.x&&echo.y===B1.y);
+      const doorOpen=(echo.x===B2.x&&echo.y===B2.y);
+      for(const m of moves){
+        if(m[0]!==tick) continue;
+        const dd={U:[0,-1],D:[0,1],L:[-1,0],R:[1,0]}[m[1]];
+        const nx=px+dd[0], ny=py+dd[1];
+        if(nx<0||nx>=W||ny<0||ny>=H) continue;
+        if(isChasm(nx,ny)&&!bridgeDown){ push("Splash! You tried the chasm with the bridge up."); fell++; px=START.x; py=START.y; continue; }
+        if(nx===DOOR.x&&ny===DOOR.y&&!doorOpen) continue;
+        px=nx; py=ny;
+      }
+      if(isChasm(px,py)&&!bridgeDown){ push("Splash! The bridge lifted under you."); fell++; px=START.x; py=START.y; }
+      if(px===DOOR.x&&py===DOOR.y&&doorOpen){ win=true; push("You step through the spirit door. WIN"); }
+    }
+    return {win,tick,events,fell,px,py,frame:tick%tape.length};
+  }
+  return {run,W,H,B1,B2,DOOR,START,isChasm,chasm:[...chasm]};
+})();
+if (typeof module!=='undefined' && module.exports) module.exports = { SIM };
+/* ============ UI ============ */
+function boot(){
+  const NS="http://www.w3.org/2000/svg";
+  const svg=document.getElementById("svg");
+  // THE intuitive-but-wrong old song: shuffle left, mumble in the corner
+  let tape=[{x:3,y:7},{x:2,y:7},{x:2,y:7},{x:2,y:7},{x:2,y:7},{x:2,y:7},{x:2,y:7},{x:2,y:7},{x:2,y:7},{x:2,y:7}];
+  let running=false, rec=false, timer=null, recTimer=null, recTick=0, tick=0, res=null, playerMoves=[], lastLogged=-1, slow=true;
+
+  function pip(x,y,ghost){
+    const g2=document.createElementNS(NS,"g");
+    const body=document.createElementNS(NS,"ellipse");
+    body.setAttribute("cx",20); body.setAttribute("cy",24); body.setAttribute("rx",13); body.setAttribute("ry",12);
+    body.setAttribute("fill",ghost?"#8fc8f5":"#37c8a5"); body.setAttribute("stroke",ghost?"#2f6fd0":"#1e8a70"); body.setAttribute("stroke-width","2");
+    body.setAttribute("opacity",ghost?0.55:1);
+    const a1=document.createElementNS(NS,"path");
+    a1.setAttribute("d","M20 12 Q20 6 25 5"); a1.setAttribute("stroke",ghost?"#2f6fd0":"#1e8a70"); a1.setAttribute("stroke-width","2"); a1.setAttribute("fill","none");
+    const tip=document.createElementNS(NS,"circle");
+    tip.setAttribute("cx",25); tip.setAttribute("cy",5); tip.setAttribute("r",2.6); tip.setAttribute("fill","#ffd166");
+    g2.append(body,a1,tip);
+    for(const px of [13.5,26.5]){
+      const e=document.createElementNS(NS,"ellipse");
+      e.setAttribute("cx",px); e.setAttribute("cy",21); e.setAttribute("rx",4.5); e.setAttribute("ry",5);
+      e.setAttribute("fill","#fff"); e.setAttribute("stroke",ghost?"#2f6fd0":"#1e8a70"); e.setAttribute("stroke-width","1.5");
+      const p=document.createElementNS(NS,"circle");
+      p.setAttribute("cx",px+(px<20?1:-1)); p.setAttribute("cy",21); p.setAttribute("r",2.3); p.setAttribute("fill","#222");
+      g2.append(e,p);
+    }
+    g2.setAttribute("transform","translate("+(x-20)+","+(y-24)+")");
+    return g2;
+  }
+
+  function render(){
+    while(svg.firstChild) svg.removeChild(svg.firstChild);
+    const cw=46;
+    const gnd=document.createElementNS(NS,"rect");
+    gnd.setAttribute("x",0); gnd.setAttribute("y",0); gnd.setAttribute("width",644); gnd.setAttribute("height",460);
+    gnd.setAttribute("fill","#efe7da"); svg.appendChild(gnd);
+    // chasm
+    for(const key of SIM.chasm){
+      const [x,y]=key.split(",").map(Number);
+      const r=document.createElementNS(NS,"rect");
+      r.setAttribute("x",x*cw); r.setAttribute("y",y*cw); r.setAttribute("width",cw); r.setAttribute("height",cw);
+      r.setAttribute("fill","#241b14"); svg.appendChild(r);
+    }
+    // canyon walls (border)
+    for(let x=0;x<SIM.W;x++) for(let y=0;y<SIM.H;y++){
+      if(x===0||y===0||x===SIM.W-1||y===SIM.H-1){
+        const r=document.createElementNS(NS,"rect");
+        r.setAttribute("x",x*cw); r.setAttribute("y",y*cw); r.setAttribute("width",cw); r.setAttribute("height",cw);
+        r.setAttribute("fill","#8a7661"); r.setAttribute("stroke","#6f5c49"); r.setAttribute("stroke-width","2");
+        svg.appendChild(r);
+      }
+    }
+    // bridge
+    const bridgeDown = res ? (res.frame>=0 && tape[res.frame] && tape[res.frame].x===SIM.B1.x && tape[res.frame].y===SIM.B1.y) : false;
+    for(const b of [{x:7,y:7},{x:8,y:7}]){
+      if(bridgeDown){
+        const p=document.createElementNS(NS,"rect");
+        p.setAttribute("x",b.x*cw+3); p.setAttribute("y",b.y*cw+12); p.setAttribute("width",cw-6); p.setAttribute("height",8);
+        p.setAttribute("fill","#a9713f"); p.setAttribute("stroke","#7d4f24"); svg.appendChild(p);
+      } else {
+        const p=document.createElementNS(NS,"rect");
+        p.setAttribute("x",b.x*cw+3); p.setAttribute("y",b.y*cw-14); p.setAttribute("width",cw-6); p.setAttribute("height",8);
+        p.setAttribute("fill","#c9b8a0"); p.setAttribute("stroke","#a08d72");
+        const rope=document.createElementNS(NS,"line");
+        rope.setAttribute("x1",b.x*cw+8); rope.setAttribute("y1",b.y*cw-14); rope.setAttribute("x2",b.x*cw+8); rope.setAttribute("y2",b.y*cw);
+        rope.setAttribute("stroke","#a08d72"); rope.setAttribute("stroke-width","2");
+        svg.append(p,rope);
+      }
+    }
+    // spirit buttons
+    for(const [btn,on,color] of [[SIM.B1,bridgeDown,"#18a07f"],[SIM.B2,res? (tape[res.frame].x===SIM.B2.x&&tape[res.frame].y===SIM.B2.y):false,"#f5b642"]]){
+      const c=document.createElementNS(NS,"circle");
+      c.setAttribute("cx",btn.x*cw+23); c.setAttribute("cy",btn.y*cw+23); c.setAttribute("r",12);
+      c.setAttribute("fill",on?color:"#d8d2c6"); c.setAttribute("stroke","#8a93a0"); c.setAttribute("stroke-width","2");
+      const glow=document.createElementNS(NS,"circle");
+      glow.setAttribute("cx",btn.x*cw+23); glow.setAttribute("cy",btn.y*cw+23); glow.setAttribute("r",on?17:0);
+      glow.setAttribute("fill",color); glow.setAttribute("opacity",0.25);
+      svg.append(glow,c);
+    }
+    // door
+    const doorOpen = res ? (tape[res.frame].x===SIM.B2.x&&tape[res.frame].y===SIM.B2.y) : false;
+    const dx=SIM.DOOR.x*cw, dy=SIM.DOOR.y*cw;
+    for(let i=0;i<3;i++){
+      const bar=document.createElementNS(NS,"rect");
+      bar.setAttribute("x",dx+8+i*12); bar.setAttribute("y",dy+doorOpen?-34:4); bar.setAttribute("width",7); bar.setAttribute("height",36);
+      bar.setAttribute("fill","#3d4d5c"); bar.setAttribute("rx",2); svg.appendChild(bar);
+    }
+    // totem
+    const totem=document.createElementNS(NS,"rect");
+    totem.setAttribute("x",12*cw+8); totem.setAttribute("y",2*cw+8); totem.setAttribute("width",30); totem.setAttribute("height",46);
+    totem.setAttribute("fill","#6b5f8f"); totem.setAttribute("rx","4"); svg.appendChild(totem);
+    // echo (ghost) if running/played
+    if(res){
+      const fr=res.frame>=0?res.frame:tick%tape.length;
+      const e=tape[fr];
+      svg.appendChild(pip(e.x,e.y,true));
+    }
+    // explorer
+    const px = res?res.px:SIM.START.x, py=res?res.py:SIM.START.y;
+    svg.appendChild(pip(px,py,false));
+    // labels
+    const lab=document.createElementNS(NS,"text");
+    lab.setAttribute("x",10); lab.setAttribute("y",20); lab.setAttribute("font-size","12"); lab.setAttribute("fill","#7a8794");
+    lab.textContent="Chasm — the bridge only comes down while your echo holds the green spirit button.";
+    svg.appendChild(lab);
+  }
+
+  function logLine(m){ const el=document.getElementById("log"); el.textContent=m+"\n"+el.textContent; }
+  function updateHud(){
+    document.getElementById("tick").textContent=(res?res.frame:tick)+"/10";
+    const fr=res?(res.frame):0;
+    const bd = res && tape[fr] && tape[fr].x===SIM.B1.x&&tape[fr].y===SIM.B1.y;
+    const dO = res && tape[fr] && tape[fr].x===SIM.B2.x&&tape[fr].y===SIM.B2.y;
+    document.getElementById("bridge").textContent=bd?"DOWN":"UP";
+    document.getElementById("door").textContent=dO?"OPEN":"SHUT";
+  }
+
+  function stepOnce(maxT){
+    res=SIM.run(tape,{moves:playerMoves},maxT);
+    tick=res.tick;
+    for(const e of res.events){ if(e.t>lastLogged){ logLine("f"+e.t+": "+e.m); lastLogged=e.t; } }
+    if(res.win){ running=false; if(timer){clearInterval(timer);timer=null;} document.getElementById("run").textContent="▶ Play the song"; document.getElementById("win").classList.add("show"); }
+    render(); updateHud(); renderTape();
+  }
+
+  function startLoop(intervalMs, maxSteps){
+    running=true; document.getElementById("run").textContent="⏸ Pause";
+    let t=0;
+    timer=setInterval(()=>{ t++; stepOnce(t); if(t>=maxSteps){ running=false; clearInterval(timer); timer=null; document.getElementById("run").textContent="▶ Play the song"; } }, intervalMs);
+  }
+
+  document.getElementById("run").onclick=()=>{
+    if(running){ running=false; if(timer){clearInterval(timer);timer=null;} document.getElementById("run").textContent="▶ Play the song"; return; }
+    if(rec){ rec=false; document.getElementById("rec").textContent="● REC"; }
+    tick=0; res=null; lastLogged=-1; playerMoves=[];
+    startLoop(slow?280:110, 80);
+  };
+  document.getElementById("rec").onclick=()=>{
+    if(running&&!rec) return;
+    rec=!rec;
+    document.getElementById("rec").textContent=rec?"■ STOP":"● REC";
+    if(rec){
+      tape=[]; tick=0; res=null; playerMoves=[]; recTick=0; lastLogged=-1;
+      res={px:SIM.START.x,py:SIM.START.y,frame:0};
+      recTimer=setInterval(()=>{
+        recTick++;
+        const s=SIM.run([{x:0,y:0}],{moves:playerMoves},recTick);
+        res=s; tick=s.tick;
+        tape.push({x:s.px,y:s.py});
+        if(tape.length>=10) stopRec();
+        render(); updateHud(); renderTape();
+      },350);
+    } else stopRec();
+  };
+  function stopRec(){
+    rec=false; document.getElementById("rec").textContent="● REC";
+    if(recTimer){ clearInterval(recTimer); recTimer=null; }
+    if(timer){ clearInterval(timer); timer=null; running=false; }
+    document.getElementById("run").textContent="▶ Play the song";
+  }
+  document.getElementById("slow").onclick=()=>{ slow=!slow; document.getElementById("slow").textContent=slow?"🐢 slow":"🐇 fast"; };
+  document.getElementById("reset").onclick=()=>{
+    running=false; rec=false; if(timer){clearInterval(timer);timer=null;} if(recTimer){clearInterval(recTimer);recTimer=null;}
+    tick=0; res=null; playerMoves=[]; lastLogged=-1;
+    document.getElementById("run").textContent="▶ Play the song"; document.getElementById("rec").textContent="● REC";
+    document.getElementById("log").textContent="The totem hums an old song: your echo shuffles left and mumbles in the corner. The bridge stays up. The door stays shut.";
+    document.getElementById("win").classList.remove("show");
+    render(); updateHud(); renderTape();
+  };
+  document.getElementById("hint").onclick=()=>{
+    logLine("💡 Hold the bridge button for the early frames (cross while it's down), then run to the door button and hold it for the late frames (step through while it's open). One loop must serve both.");
+  };
+
+  // live movement
+  const KEYDIR={ArrowUp:'U',ArrowDown:'D',ArrowLeft:'L',ArrowRight:'R',w:'U',s:'D',a:'L',d:'R'};
+  window.addEventListener("keydown",e=>{
+    const k=KEYDIR[e.key]||KEYDIR[e.key.toLowerCase()];
+    if(!k) return;
+    e.preventDefault();
+    if(rec){
+      recTick++;
+      playerMoves.push([recTick,k]);
+      const s=SIM.run([{x:0,y:0}],{moves:playerMoves},recTick);
+      res=s; tick=s.tick;
+      tape.push({x:s.px,y:s.py});
+      if(tape.length>=10) stopRec();
+      render(); updateHud(); renderTape();
+      return;
+    }
+    playerMoves.push([tick,k]);
+    stepOnce(Math.max(1,tick+1));
+  });
+
+  function renderTape(){
+    const box=document.getElementById("tape");
+    box.innerHTML="";
+    const n=tape.length;
+    for(let i=0;i<10;i++){
+      const slot=document.createElement("div");
+      slot.className="slot"+(res&&res.frame===i?" cur":"");
+      const a=document.createElement("span");
+      if(i>=n){ a.textContent="·"; }
+      else if(i<n-1){ const f=tape[i], g=tape[i+1];
+        const dx=g.x-f.x, dy=g.y-f.y;
+        a.textContent = dx===1&&dy===0?"→":dx===-1&&dy===0?"←":dx===0&&dy===1?"↓":dx===0&&dy===-1?"↑":"●";
+      } else a.textContent="●";
+      slot.appendChild(a);
+      if(i<n && tape[i].x===SIM.B1.x&&tape[i].y===SIM.B1.y){ const f=document.createElement("div"); f.className="flag b1"; slot.appendChild(f); }
+      if(i<n && tape[i].x===SIM.B2.x&&tape[i].y===SIM.B2.y){ const f=document.createElement("div"); f.className="flag b2"; slot.appendChild(f); }
+      if(i<n-1){
+        slot.onclick=()=>{
+          const f=tape[i], g=tape[i+1];
+          const dx=g.x-f.x, dy=g.y-f.y;
+          const order=['R','D','L','U'];
+          const cur= dx===1&&dy===0?0 : dx===0&&dy===1?1 : dx===-1&&dy===0?2 : dx===0&&dy===-1?3 : -1;
+          const next=(cur+1)%4;
+          const dd={R:[1,0],D:[0,1],L:[-1,0],U:[0,-1]}[order[next]];
+          tape[i+1]={x:f.x+dd[0],y:f.y+dd[1]};
+          renderTape(); render();
+        };
+      }
+      box.appendChild(slot);
+    }
+    const legend=document.createElement("div");
+    legend.className="hint";
+    legend.innerHTML="green flag = bridge held · amber flag = door held · click a slot to edit that step";
+    box.appendChild(legend);
+  }
+  renderTape(); render(); updateHud();
+}
+if (typeof window!=='undefined' && typeof document!=='undefined') boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Demo 02 — March the Oaf</title>
+<style>
+  :root{ --ink:#26313b; --panel:#ffffff; --line:#dfe6ec; --accent:#7d5ba6; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:"Segoe UI",system-ui,sans-serif; background:#eef2f6; color:var(--ink); }
+  header{ display:flex; align-items:baseline; gap:16px; padding:10px 18px; background:var(--panel); border-bottom:1px solid var(--line); }
+  header h1{ font-size:17px; margin:0; } header a{ color:#7a8794; font-size:13px; text-decoration:none; }
+  header .tag{ font-size:11px; background:#efe8f7; color:var(--accent); padding:2px 8px; border-radius:10px; }
+  main{ display:flex; gap:16px; padding:16px; flex-wrap:wrap; }
+  .world{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; min-width:290px; flex:1; }
+  h2{ font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:#7a8794; margin:6px 0 8px; }
+  .cmd-card{ display:flex; align-items:center; gap:6px; background:#f6f9fb; border:1px solid var(--line); border-radius:8px; padding:6px 8px; margin-bottom:6px; }
+  .cmd-card select{ padding:4px; border:1px solid var(--line); border-radius:5px; }
+  .cmd-card input{ width:52px; padding:3px; border:1px solid var(--line); border-radius:5px; }
+  .cmd-card .idx{ color:#a3aeba; font-size:12px; width:20px; }
+  .cmd-card.cur{ border-color:var(--accent); background:#f7f3fc; }
+  .x-btn{ border:none; background:transparent; color:#c0392b; cursor:pointer; font-size:15px; }
+  .btn{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 14px; font-size:13px; cursor:pointer; }
+  .btn.primary{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn:disabled{ opacity:.45; cursor:default; }
+  .hud{ display:flex; gap:14px; font-size:13px; margin-bottom:8px; }
+  #log{ background:#f6f9fb; border:1px solid var(--line); border-radius:8px; padding:8px; font-size:12px; height:130px; overflow-y:auto; white-space:pre-line; }
+  .hint{ font-size:11px; color:#7a8794; }
+  #win{ display:none; position:fixed; inset:0; background:rgba(255,255,255,.85); z-index:9; align-items:center; justify-content:center; flex-direction:column; }
+  #win.show{ display:flex; }
+</style>
+</head>
+<body>
+<header>
+  <h1>02 · March the Oaf</h1>
+  <span class="tag">asynchronous delegation</span>
+  <a href="../index.html">← portal</a>
+</header>
+<main>
+  <div class="world">
+    <div class="hud"><span>tick <b id="tick">0</b></span><span>gate <b id="gate">SHUT</b></span><span>Pip's job: <b>wind the key, then watch</b></span></div>
+    <svg id="svg" width="660" height="260" viewBox="0 0 660 260"></svg>
+  </div>
+  <div class="panel">
+    <h2>The Oaf's Marching Orders</h2>
+    <p class="hint">The golem is blind: it cannot see stones, pits, the plate or the gate. Queue its commands, wind it up, and step back.</p>
+    <div id="queue"></div>
+    <button class="btn" id="addCmd">+ command</button>
+    <div style="margin-top:12px;display:flex;gap:8px;">
+      <button class="btn primary" id="run">🔑 Wind up &amp; Run</button>
+      <button class="btn" id="reset">↺ Reset</button>
+    </div>
+    <div style="margin-top:6px;"><button class="btn" id="hint">💡 hint</button></div>
+    <h2>World Diary</h2>
+    <div id="log">The Oaf stands at the start, dumb as stone. The lane ahead: a stone, a pit, another stone, a plate, a gate… and the key glinting at the far end.</div>
+  </div>
+</main>
+<div id="win"><h1 style="color:var(--accent)">The Oaf delivers the key!</h1><p>Pip pockets it with a happy hop. Reset to delegate again.</p></div>
+
+<script>
+"use strict";
+/* ============ PURE SIM CORE (no DOM) ============ */
+const SIM=(function(){
+  const CELLS=11;            // lane cells 1..11; 12 = end wall
+  const STONE_A=3, PIT=4, STONE_B=6, PLATE=9, GATE=10, KEY=11;
+
+  function run(queue, maxT){
+    let golem=1, pit=PIT, plate=false, gate=false, win=false, qi=0, cur=null, curRemain=0;
+    const stones=new Set([STONE_A,STONE_B]);
+    const events=[]; const push=m=>events.push({t:tick,m});
+    let tick;
+    const blockedAhead=()=> stones.has(golem+1) || (golem+1===GATE&&!gate) || golem+1>CELLS;
+
+    for(tick=0; tick<(maxT||240) && !win; tick++){
+      if(cur===null){
+        if(qi>=queue.length) break;
+        cur=queue[qi++];
+        if(cur.op==='WALK'){ curRemain=Math.max(0,cur.k|0); push("WALK "+cur.k); }
+        if(cur.op==='WAIT'){ curRemain=Math.max(0,cur.k|0); push("WAIT "+cur.k); }
+      }
+      if(cur.op==='WALK'){
+        if(curRemain>0){
+          if(blockedAhead()){ push("Thunk! The Oaf walks into something at cell "+(golem+1)+" and stops."); cur=null; }
+          else{
+            const nx=golem+1;
+            if(nx===PIT && pit!==0){ push("The Oaf steps into the pit and vanishes. FAIL"); return {win:false,tick,events,fail:'pit',golem,nx}; }
+            golem=nx;
+            if(golem===PLATE && !plate){ plate=true; gate=true; push("The plate CLICKS down under the Oaf. The gate grinds OPEN. (latched)"); }
+            if(golem===GATE) push("The gate grinds open for the Oaf.");
+            if(golem===KEY){ win=true; push("The Oaf seizes the key and marches back to Pip. WIN"); }
+            curRemain--;
+            if(curRemain<=0) cur=null;
+          }
+        } else cur=null;
+      }
+      else if(cur.op==='WAIT'){
+        curRemain--;
+        if(curRemain<=0) cur=null;
+      }
+      else if(cur.op==='PUSH'){
+        if(stones.has(golem+1)){
+          const tgt=golem+2;
+          if(tgt===PIT && pit!==0){ stones.delete(golem+1); pit=0; push("The stone rolls into the pit — bridge complete."); }
+          else if(tgt<=CELLS+1 && !stones.has(tgt) && !(tgt===GATE&&!gate)){ stones.delete(golem+1); stones.add(tgt); push("The Oaf shoves the stone forward."); }
+          else push("Thunk — the stone won't budge.");
+        } else push("The Oaf shoves at air.");
+        cur=null;
+      }
+      else if(cur.op==='SMASH'){
+        if(stones.has(golem+1)){ stones.delete(golem+1); push("CRASH — the stone shatters into rubble."); }
+        else push("The Oaf swings at air.");
+        cur=null;
+      }
+    }
+    return { win, tick, events, golem, stones:[...stones], pitFilled:pit===0, gate, plate };
+  }
+  return { run, CELLS, STONE_A, PIT, STONE_B, PLATE, GATE, KEY };
+})();
+if (typeof module!=='undefined' && module.exports) module.exports = { SIM };
+/* ============ UI ============ */
+function boot(){
+  const NS="http://www.w3.org/2000/svg";
+  const svg=document.getElementById("svg");
+  const queue=[{op:'WALK',k:10}];   // THE intuitive-but-wrong default program
+  let running=false, timer=null, tick=0, res=null, curIdx=-1, lastLogged=-1;
+
+  function pip(x,y,flip){
+    const g2=document.createElementNS(NS,"g");
+    const body=document.createElementNS(NS,"ellipse");
+    body.setAttribute("cx",20); body.setAttribute("cy",24); body.setAttribute("rx",13); body.setAttribute("ry",12);
+    body.setAttribute("fill","#37c8a5"); body.setAttribute("stroke","#1e8a70"); body.setAttribute("stroke-width","2");
+    const a1=document.createElementNS(NS,"path");
+    a1.setAttribute("d","M20 12 Q20 6 25 5"); a1.setAttribute("stroke","#1e8a70"); a1.setAttribute("stroke-width","2"); a1.setAttribute("fill","none");
+    const tip=document.createElementNS(NS,"circle");
+    tip.setAttribute("cx",25); tip.setAttribute("cy",5); tip.setAttribute("r",2.6); tip.setAttribute("fill","#ffd166");
+    g2.append(body,a1,tip);
+    for(const px of [13.5,26.5]){
+      const e=document.createElementNS(NS,"ellipse");
+      e.setAttribute("cx",px); e.setAttribute("cy",21); e.setAttribute("rx",4.5); e.setAttribute("ry",5);
+      e.setAttribute("fill","#fff"); e.setAttribute("stroke","#1e8a70"); e.setAttribute("stroke-width","1.5");
+      const p=document.createElementNS(NS,"circle");
+      p.setAttribute("cx",px+(px<20?1:-1)); p.setAttribute("cy",21); p.setAttribute("r",2.3); p.setAttribute("fill","#222");
+      const sh=document.createElementNS(NS,"circle");
+      sh.setAttribute("cx",px+(px<20?2:0)); sh.setAttribute("cy",19); sh.setAttribute("r",0.9); sh.setAttribute("fill","#fff");
+      g2.append(e,p,sh);
+    }
+    g2.setAttribute("transform","translate("+(x-20)+","+(y-24)+")"+(flip?" scale(-1,1)":"" ));
+    return g2;
+  }
+  function golem(x,y){
+    const g2=document.createElementNS(NS,"g");
+    const r=document.createElementNS(NS,"rect");
+    r.setAttribute("x",x-17); r.setAttribute("y",y-22); r.setAttribute("width",34); r.setAttribute("height",40);
+    r.setAttribute("fill","#b7a48c"); r.setAttribute("stroke","#7d6b52"); r.setAttribute("stroke-width","2"); r.setAttribute("rx","5");
+    for(const px of [x-6,x+6]){
+      const e=document.createElementNS(NS,"circle");
+      e.setAttribute("cx",px); e.setAttribute("cy",y-10); e.setAttribute("r",4); e.setAttribute("fill","#fff"); e.setAttribute("stroke","#7d6b52");
+      const p=document.createElementNS(NS,"circle");
+      p.setAttribute("cx",px); p.setAttribute("cy",y-10); p.setAttribute("r",2); p.setAttribute("fill","#222");
+      g2.append(e,p);
+    }
+    const m=document.createElementNS(NS,"path");
+    m.setAttribute("d","M"+(x-5)+" "+(y+2)+" h10"); m.setAttribute("stroke","#7d6b52"); m.setAttribute("stroke-width","2");
+    g2.append(r,m);
+    return g2;
+  }
+
+  function render(){
+    while(svg.firstChild) svg.removeChild(svg.firstChild);
+    const laneY=170, cellW=48, x0=42;
+    // ground
+    const gnd=document.createElementNS(NS,"rect");
+    gnd.setAttribute("x",0); gnd.setAttribute("y",0); gnd.setAttribute("width",660); gnd.setAttribute("height",260);
+    gnd.setAttribute("fill","#f2f0ea"); svg.appendChild(gnd);
+    // cliffs / canyon backdrop
+    const bg=document.createElementNS(NS,"rect");
+    bg.setAttribute("x",0); bg.setAttribute("y",0); bg.setAttribute("width",660); bg.setAttribute("height",120);
+    bg.setAttribute("fill","#e8e2d6"); svg.appendChild(bg);
+    // lane cells
+    for(let c=1;c<=SIM.CELLS+1;c++){
+      const rx=x0+(c-1)*cellW;
+      const r=document.createElementNS(NS,"rect");
+      r.setAttribute("x",rx); r.setAttribute("y",laneY); r.setAttribute("width",cellW); r.setAttribute("height",44);
+      r.setAttribute("fill","#fff"); r.setAttribute("stroke","#cfc7b8");
+      svg.appendChild(r);
+      const filled = res && res.pitFilled && c===SIM.PIT;
+      if(c===SIM.PIT && !filled){
+        const hole=document.createElementNS(NS,"rect");
+        hole.setAttribute("x",rx+8); hole.setAttribute("y",laneY+18); hole.setAttribute("width",cellW-16); hole.setAttribute("height",26);
+        hole.setAttribute("fill","#3a2f24"); hole.setAttribute("rx",4); svg.appendChild(hole);
+      }
+      if(res && res.stones.includes(c)){
+        const s=document.createElementNS(NS,"circle");
+        s.setAttribute("cx",rx+cellW/2); s.setAttribute("cy",laneY+18); s.setAttribute("r",13);
+        s.setAttribute("fill","#9a8b7a"); s.setAttribute("stroke","#6f6252"); s.setAttribute("stroke-width","2");
+        svg.appendChild(s);
+      }
+      if(c===SIM.PLATE){
+        const p=document.createElementNS(NS,"circle");
+        p.setAttribute("cx",rx+cellW/2); p.setAttribute("cy",laneY+30); p.setAttribute("r",11);
+        p.setAttribute("fill",(res&&res.plate)?"#f5b642":"#c8cfd6"); p.setAttribute("stroke","#8a93a0"); p.setAttribute("stroke-width","2");
+        svg.appendChild(p);
+      }
+      if(c===SIM.GATE){
+        for(let i=0;i<3;i++){
+          const bar=document.createElementNS(NS,"rect");
+          const rise=(res&&res.gate)?36:0;
+          bar.setAttribute("x",rx+8+i*11); bar.setAttribute("y",laneY-14+rise); bar.setAttribute("width",6); bar.setAttribute("height",30);
+          bar.setAttribute("fill","#3d4d5c"); bar.setAttribute("rx",2); svg.appendChild(bar);
+        }
+      }
+      if(c===SIM.KEY){
+        const k=document.createElementNS(NS,"circle");
+        k.setAttribute("cx",rx+cellW/2); k.setAttribute("cy",laneY+22); k.setAttribute("r",8);
+        k.setAttribute("fill","#ffd166"); k.setAttribute("stroke","#d9a62e"); k.setAttribute("stroke-width","2");
+        const k2=document.createElementNS(NS,"rect");
+        k2.setAttribute("x",rx+cellW/2-2); k2.setAttribute("y",laneY+14); k2.setAttribute("width",4); k2.setAttribute("height",10);
+        k2.setAttribute("fill","#d9a62e"); svg.appendChild(k2);
+        svg.appendChild(k);
+      }
+    }
+    // golem
+    const gx = res ? x0+(res.golem-1)*cellW+cellW/2 : x0+cellW/2;
+    svg.appendChild(golem(gx,laneY+2));
+    // Pip on the cliff, winding crank
+    svg.appendChild(pip(70,88));
+    const crank=document.createElementNS(NS,"path");
+    const spin=running&&tick<3 ? "M70 100 a8 8 0 1 1 -16 0 a8 8 0 1 1 16 0" : "M70 100 q-8 6 -12 12";
+    crank.setAttribute("d",spin); crank.setAttribute("stroke","#7d6b52"); crank.setAttribute("stroke-width","2.5"); crank.setAttribute("fill","none");
+    svg.appendChild(crank);
+    // labels
+    const lab=document.createElementNS(NS,"text");
+    lab.setAttribute("x",14); lab.setAttribute("y",150); lab.setAttribute("font-size","12"); lab.setAttribute("fill","#7a8794");
+    lab.textContent="Pip winds the key → the Oaf marches alone →";
+    svg.appendChild(lab);
+  }
+
+  function logLine(m){ const el=document.getElementById("log"); el.textContent=m+"\n"+el.textContent; }
+  function updateHud(){ document.getElementById("tick").textContent=tick; document.getElementById("gate").textContent=(res&&res.gate)?"OPEN":"SHUT"; }
+
+  function stepOnce(maxT){
+    const q=queue.map(c=>({op:c.op,k:c.op==='WALK'||c.op==='WAIT'?(c.k|0):0}));
+    res=SIM.run(q,maxT);
+    tick=res.tick;
+    for(const e of res.events){ if(e.t>lastLogged){ logLine("t"+e.t+": "+e.m); lastLogged=e.t; } }
+    if(res.fail) logLine("💀 PIT — the run ends in stone-cold silence.");
+    if(res.win){ running=false; if(timer){clearInterval(timer);timer=null;} document.getElementById("run").textContent="🔑 Wind up & Run"; document.getElementById("win").classList.add("show"); }
+    render(); updateHud();
+  }
+  document.getElementById("run").onclick=()=>{
+    if(running){ running=false; clearInterval(timer); timer=null; document.getElementById("run").textContent="🔑 Wind up & Run"; return; }
+    tick=0; res=null; lastLogged=-1;
+    running=true; document.getElementById("run").textContent="⏸ Pause";
+    let t=0;
+    timer=setInterval(()=>{ t++; stepOnce(t); if(t>140){ running=false; clearInterval(timer); timer=null; document.getElementById("run").textContent="🔑 Wind up & Run"; } },200);
+  };
+  document.getElementById("reset").onclick=()=>{
+    running=false; if(timer){clearInterval(timer);timer=null;}
+    tick=0; res=null; lastLogged=-1;
+    document.getElementById("run").textContent="🔑 Wind up & Run";
+    document.getElementById("log").textContent="The Oaf stands at the start, dumb as stone. The lane ahead: a stone, a pit, another stone, a plate, a gate… and the key glinting at the far end.";
+    document.getElementById("win").classList.remove("show");
+    render(); updateHud();
+  };
+  document.getElementById("hint").onclick=()=>{
+    logLine("💡 The Oaf cannot climb or see. Walk it to the first stone, PUSH the stone into the pit (a bridge!), walk on, SMASH the second stone when adjacent, then WALK all the way — it will step on the plate and the gate opens.");
+  };
+
+  const OPNAMES={WALK:"WALK",PUSH:"PUSH",SMASH:"SMASH",WAIT:"WAIT"};
+  function renderQueue(){
+    const box=document.getElementById("queue");
+    box.innerHTML="";
+    queue.forEach((c,i)=>{
+      const card=document.createElement("div"); card.className="cmd-card"+(i===curIdx?" cur":"");
+      const idx=document.createElement("span"); idx.className="idx"; idx.textContent=(i+1)+".";
+      const sel=document.createElement("select");
+      for(const op of ['WALK','PUSH','SMASH','WAIT']){
+        const o=document.createElement("option"); o.value=op; o.textContent=OPNAMES[op]; if(c.op===op) o.selected=true;
+        sel.appendChild(o);
+      }
+      sel.onchange=()=>{ c.op=sel.value; if(c.op==='PUSH'||c.op==='SMASH'){ renderQueue(); } };
+      const inp=document.createElement("input");
+      inp.type="number"; inp.min=1; inp.max=11; inp.value=c.k||1;
+      inp.onchange=()=>{ c.k=Math.max(1,parseInt(inp.value)||1); };
+      const x=document.createElement("button"); x.className="x-btn"; x.textContent="✕";
+      x.onclick=()=>{ queue.splice(i,1); if(!queue.length) queue.push({op:'WALK',k:1}); renderQueue(); };
+      card.append(idx,sel);
+      if(c.op==='WALK'||c.op==='WAIT') card.appendChild(inp);
+      card.appendChild(x);
+      box.appendChild(card);
+    });
+  }
+  document.getElementById("addCmd").onclick=()=>{ queue.push({op:'WALK',k:1}); renderQueue(); };
+  renderQueue(); render(); updateHud();
+}
+if (typeof window!=='undefined' && typeof document!=='undefined') boot();
+</script>
+</body>
+</html>

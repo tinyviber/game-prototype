@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Demo 04 — The Whispering Grotto</title>
+<style>
+  :root{ --ink:#26313b; --panel:#ffffff; --line:#dfe6ec; --accent:#b4533a; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:"Segoe UI",system-ui,sans-serif; background:#eef2f6; color:var(--ink); }
+  header{ display:flex; align-items:baseline; gap:16px; padding:10px 18px; background:var(--panel); border-bottom:1px solid var(--line); }
+  header h1{ font-size:17px; margin:0; } header a{ color:#7a8794; font-size:13px; text-decoration:none; }
+  header .tag{ font-size:11px; background:#fbe9e4; color:var(--accent); padding:2px 8px; border-radius:10px; }
+  main{ display:flex; gap:16px; padding:16px; flex-wrap:wrap; }
+  .world{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; min-width:300px; flex:1; }
+  h2{ font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:#7a8794; margin:6px 0 8px; }
+  .tools{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+  .tool{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:6px 10px; font-size:12px; cursor:pointer; }
+  .tool.on{ background:var(--accent); color:#fff; border-color:var(--accent); }
+  .rule-row{ display:flex; align-items:center; gap:6px; background:#f6f9fb; border:1px solid var(--line); border-radius:8px; padding:6px 8px; margin-bottom:6px; font-size:12px; }
+  .rule-row select{ padding:3px; border:1px solid var(--line); border-radius:5px; }
+  .btn{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 14px; font-size:13px; cursor:pointer; }
+  .btn.primary{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn:disabled{ opacity:.45; cursor:default; }
+  .hud{ display:flex; gap:14px; font-size:13px; margin-bottom:8px; }
+  #log{ background:#f6f9fb; border:1px solid var(--line); border-radius:8px; padding:8px; font-size:12px; height:110px; overflow-y:auto; white-space:pre-line; }
+  .hint{ font-size:11px; color:#7a8794; }
+  .sens{ display:flex; align-items:center; gap:8px; font-size:12px; margin:3px 0; }
+  .bar{ width:80px; height:8px; background:#eceff2; border-radius:4px; overflow:hidden; }
+  .bar i{ display:block; height:100%; background:#b4533a; }
+  #win{ display:none; position:fixed; inset:0; background:rgba(255,255,255,.85); z-index:9; align-items:center; justify-content:center; flex-direction:column; }
+  #win.show{ display:flex; }
+</style>
+</head>
+<body>
+<header>
+  <h1>04 · The Whispering Grotto</h1>
+  <span class="tag">sensor–actuator networks</span>
+  <a href="../index.html">← portal</a>
+</header>
+<main>
+  <div class="world">
+    <div class="hud"><span>tick <b id="tick">0</b></span><span>basin: <b id="pool">0/2</b></span><span>gate <b id="gate">SHUT</b></span></div>
+    <svg id="svg" width="720" height="480" viewBox="0 0 720 480"></svg>
+  </div>
+  <div class="panel">
+    <h2>Your Ears &amp; Voices</h2>
+    <p class="hint">The grotto is moonlit — but the motes are <b>invisible</b>. Listening stones are your only eyes. Hum pipes <b>repel</b>; lure bells <b>attract</b>. Wire rules, then watch the sensors sing.</p>
+    <div class="tools">
+      <button class="tool" data-t="stone">🔊 stone</button>
+      <button class="tool" data-t="bell">🔔 bell</button>
+      <button class="tool" data-t="pipe">🎺 pipe</button>
+      <button class="tool" data-t="erase">🗑 erase</button>
+      <button class="tool" data-t="walk">✋ walk</button>
+    </div>
+    <h2>Wiring Rules</h2>
+    <div id="rules"></div>
+    <button class="btn" id="addRule">+ rule</button>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn primary" id="run">▶ Listen</button>
+      <button class="btn" id="step">Step</button>
+      <button class="btn" id="reset">↺ Reset</button>
+      <button class="btn" id="reseed">🎲 new drift</button>
+    </div>
+    <div style="margin-top:6px;"><button class="btn" id="hint">💡 hint</button></div>
+    <h2>Sensor Readout</h2>
+    <div id="readout"></div>
+    <h2>Grotto Diary</h2>
+    <div id="log">The grotto whispers. Your stone flickers HOT — something is in the dark with you. But the pipe hums, and the gate stays shut.</div>
+  </div>
+</main>
+<div id="win"><h1 style="color:var(--accent)">Two motes rest in the basin — the gate opens!</h1><p>You herded what you could not see. Reset and rewire if you wish.</p></div>
+
+<script>
+"use strict";
+/* ============ PURE SIM CORE (no DOM) ============ */
+const SIM=(function(){
+  const W=18,H=12;
+  const wall=new Set();
+  for(let x=0;x<W;x++){ wall.add(x+",0"); wall.add(x+","+(H-1)); }
+  for(let y=0;y<H;y++){ wall.add("0,"+y); wall.add((W-1)+","+y); }
+  // funnel corridor at y=6 (x=7..13)
+  for(let x=7;x<=13;x++){ wall.add(x+",5"); wall.add(x+",7"); }
+  // bell alcove: bell cell (15,6) reachable ONLY through the basin (14,6)
+  wall.add("15,5"); wall.add("15,7"); wall.add("16,6");
+  const POOL={x:14,y:6};
+  const GATE={x:16,y:4};
+  const START={x:2,y:8};
+  const SPAWNS=[[3,5],[3,6],[3,7]];
+  const SENSOR_R=3, POOL_R=1, RESONANCE=8;
+  const BASIN=new Set(["13,6","14,6"]);   // the basin is the last two corridor cells
+
+  function makeRng(seed){ let s=seed>>>0; return ()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; }; }
+
+  function run(cfg){
+    // cfg: {stones:[[x,y]..], bells:[[x,y]..], pipes:[[x,y]..], rules:[{sensor,actuator}], seed, plan:{moves}, maxT}
+    const rng=makeRng(cfg.seed||1);
+    const stones=(cfg.stones||[]).map(p=>({x:p[0],y:p[1]}));
+    const bells=(cfg.bells||[]).map(p=>({x:p[0],y:p[1],name:"BELL"+(p[2]||"")}));
+    const pipes=(cfg.pipes||[]).map(p=>({x:p[0],y:p[1],name:"PIPE"+(p[2]||"")}));
+    const rules=cfg.rules||[];
+    // name actuators
+    bells.forEach((b,i)=>b.name=b.name||("BELL"+(i+1)));
+    pipes.forEach((p,i)=>p.name=p.name||("PIPE"+(i+1)));
+    const actByName={};
+    [...bells,...pipes].forEach(a=>actByName[a.name]=a);
+    const sensors=[{x:POOL.x,y:POOL.y,name:"SPOOL",r:POOL_R},...stones.map((s,i)=>({x:s.x,y:s.y,name:"S"+(i+1),r:SENSOR_R}))];
+
+    const motes=SPAWNS.map(p=>({x:p[0],y:p[1]}));
+    let px=START.x, py=START.y, gate=false, poolCount=0, win=false;
+    const events=[]; const push=m=>events.push({t:tick,m});
+    const at=(x,y,set)=>set.some(p=>p.x===x&&p.y===y);
+    const passable=(x,y)=>{
+      if(wall.has(x+","+y)) return false;
+      if(GATE.x===x&&GATE.y===y&&!gate) return false;
+      if(at(x,y,bells)||at(x,y,pipes)||at(x,y,stones)) return false;
+      return x>=0&&x<W&&y>=0&&y<H;
+    };
+    const moteBlocked=(x,y)=> !(x>=0&&x<W&&y>=0&&y<H) || wall.has(x+","+y) || (GATE.x===x&&GATE.y===y&&!gate) || at(x,y,bells)||at(x,y,pipes)|| at(x,y,motes);
+    const dist=(a,b)=>Math.abs(a.x-b.x)+Math.abs(a.y-b.y);
+    const sensorHot=s=>{
+      for(const m of motes){ if(Math.abs(m.x-s.x)+Math.abs(m.y-s.y)<=s.r) return 1/(dist(m,s)+0.001); }
+      return 0;
+    };
+    const res={}; let tick;
+    for(tick=0; tick<(cfg.maxT||400) && !win; tick++){
+      // 1. sensor readings → rules → actuator targets (with resonance)
+      const actTimer={};
+      [...bells,...pipes].forEach(a=>actTimer[a.name]=0);
+      for(const r of rules){
+        const s=sensors.find(s=>s.name===r.sensor);
+        if(s && sensorHot(s)>0 && actByName[r.actuator]) actTimer[r.actuator]=RESONANCE;
+      }
+      // 2. mote movement
+      for(const m of motes){
+        const bellOn=bells.filter(b=>actTimer[b.name]>0);
+        const pipeOn=pipes.filter(p=>actTimer[p.name]>0);
+        const dirs=[["U",0,-1],["D",0,1],["L",-1,0],["R",1,0]];
+        let move=null;
+        if(bellOn.length){
+          const target=bellOn.reduce((a,b)=>dist(m,b)<dist(m,a)?b:a);
+          const cur=dist(m,target);
+          const opts=dirs.map(([n,dx,dy])=>({n,x:m.x+dx,y:m.y+dy,d:Math.abs(m.x+dx-target.x)+Math.abs(m.y+dy-target.y)})).filter(o=>o.d<cur&&!moteBlocked(o.x,o.y));
+          if(opts.length){ opts.sort((a,b)=>a.d-b.d); move=opts[0].n; }
+        } else if(pipeOn.length){
+          const target=pipeOn.reduce((a,b)=>dist(m,b)<dist(m,a)?b:a);
+          const cur=dist(m,target);
+          const opts=dirs.map(([n,dx,dy])=>({n,x:m.x+dx,y:m.y+dy,d:Math.abs(m.x+dx-target.x)+Math.abs(m.y+dy-target.y)})).filter(o=>o.d>cur&&!moteBlocked(o.x,o.y));
+          if(opts.length){ opts.sort((a,b)=>b.d-a.d); move=opts[0].n; }
+        }
+        if(move===null){
+          // drift: biased toward the funnel mouth when in the left chamber
+          let cands=dirs.slice();
+          if(m.x<7 && rng()<0.45){ cands=[["R",1,0],["D",0,1],["U",0,-1],["L",-1,0]]; }
+          cands.sort(()=>rng()-0.5);
+          for(const [n,dx,dy] of cands){
+            const nx=m.x+dx, ny=m.y+dy;
+            if(!moteBlocked(nx,ny)){ move=n; break; }
+          }
+        }
+        if(move){
+          const dd={U:[0,-1],D:[0,1],L:[-1,0],R:[1,0]}[move];
+          m.x+=dd[0]; m.y+=dd[1];
+        }
+      }
+      // 3. pool count + gate
+      poolCount=motes.filter(m=>BASIN.has(m.x+","+m.y)).length;
+      if(poolCount>=2 && !gate){ gate=true; push("Two motes settle in the basin. The gate grinds OPEN."); }
+      // 4. explorer move
+      const moves=(cfg.plan&&cfg.plan.moves)||[];
+      for(const mv of moves){
+        if(mv[0]!==tick) continue;
+        const dd={U:[0,-1],D:[0,1],L:[-1,0],R:[1,0]}[mv[1]];
+        const nx=px+dd[0], ny=py+dd[1];
+        if(!wall.has(nx+","+ny) && !(GATE.x===nx&&GATE.y===ny&&!gate) && !at(nx,ny,bells)&&!at(nx,ny,pipes)&&!at(nx,ny,stones)){ px=nx; py=ny; }
+      }
+      // 5. win
+      if(px===GATE.x&&py===GATE.y&&gate){ win=true; push("You slip through the gate. WIN"); }
+      // 6. resonance decay
+      for(const k in actTimer){ if(actTimer[k]>0) actTimer[k]--; }
+      res.lastTimer=actTimer;
+    }
+    return {win,tick,events,gate,poolCount,px,py,resonance:res.lastTimer, motes:motes.map(m=>({x:m.x,y:m.y}))};
+  }
+  return {run,W,H,POOL,GATE,START,wallCells:[...wall],SENSOR_R};
+})();
+if (typeof module!=='undefined' && module.exports) module.exports = { SIM };
+/* ============ UI ============ */
+function boot(){
+  const NS="http://www.w3.org/2000/svg";
+  const svg=document.getElementById("svg");
+  let seed=(Math.random()*1e9)>>>0;
+  // THE intuitive-but-wrong default: bell in the wrong corner, a pipe scaring the funnel, one rule that repels
+  let stones=[[3,6]], bells=[[3,4]], pipes=[[10,6]];
+  let rules=[{sensor:"S1",actuator:"PIPE1"}];
+  let tool="walk", running=false, timer=null, tick=0, res=null, lastLogged=-1;
+
+  function pip(x,y){
+    const g2=document.createElementNS(NS,"g");
+    const glow=document.createElementNS(NS,"circle");
+    glow.setAttribute("cx",20); glow.setAttribute("cy",24); glow.setAttribute("r",26); glow.setAttribute("fill","#ffd166"); glow.setAttribute("opacity",0.12);
+    const body=document.createElementNS(NS,"ellipse");
+    body.setAttribute("cx",20); body.setAttribute("cy",24); body.setAttribute("rx",13); body.setAttribute("ry",12);
+    body.setAttribute("fill","#37c8a5"); body.setAttribute("stroke","#1e8a70"); body.setAttribute("stroke-width","2");
+    const a1=document.createElementNS(NS,"path");
+    a1.setAttribute("d","M20 12 Q20 6 25 5"); a1.setAttribute("stroke","#1e8a70"); a1.setAttribute("stroke-width","2"); a1.setAttribute("fill","none");
+    const tip=document.createElementNS(NS,"circle");
+    tip.setAttribute("cx",25); tip.setAttribute("cy",5); tip.setAttribute("r",2.6); tip.setAttribute("fill","#ffd166");
+    g2.append(glow,body,a1,tip);
+    for(const px of [13.5,26.5]){
+      const e=document.createElementNS(NS,"ellipse");
+      e.setAttribute("cx",px); e.setAttribute("cy",21); e.setAttribute("rx",4.5); e.setAttribute("ry",5);
+      e.setAttribute("fill","#fff"); e.setAttribute("stroke","#1e8a70"); e.setAttribute("stroke-width","1.5");
+      const p=document.createElementNS(NS,"circle");
+      p.setAttribute("cx",px+(px<20?1:-1)); p.setAttribute("cy",21); p.setAttribute("r",2.3); p.setAttribute("fill","#222");
+      g2.append(e,p);
+    }
+    g2.setAttribute("transform","translate("+(x*40-20)+","+(y*40-24)+")");
+    return g2;
+  }
+
+  function render(){
+    while(svg.firstChild) svg.removeChild(svg.firstChild);
+    const gnd=document.createElementNS(NS,"rect");
+    gnd.setAttribute("x",0); gnd.setAttribute("y",0); gnd.setAttribute("width",720); gnd.setAttribute("height",480);
+    gnd.setAttribute("fill","#2a2733"); svg.appendChild(gnd);       // moonlit cave floor
+    // floor cells slightly lighter
+    for(let x=0;x<18;x++) for(let y=0;y<12;y++){
+      const r=document.createElementNS(NS,"rect");
+      r.setAttribute("x",x*40); r.setAttribute("y",y*40); r.setAttribute("width",40); r.setAttribute("height",40);
+      r.setAttribute("fill",(x+y)%2?"#302c3a":"#2c2835"); svg.appendChild(r);
+    }
+    // walls
+    for(const key of SIM.wallCells){
+      const [x,y]=key.split(",").map(Number);
+      const r=document.createElementNS(NS,"rect");
+      r.setAttribute("x",x*40); r.setAttribute("y",y*40); r.setAttribute("width",40); r.setAttribute("height",40);
+      r.setAttribute("fill","#4a4252"); r.setAttribute("stroke","#372f41"); r.setAttribute("stroke-width","2");
+      svg.appendChild(r);
+    }
+    // basin (pool)
+    const pIn=res?res.poolCount:0;
+    const basin=document.createElementNS(NS,"circle");
+    basin.setAttribute("cx",SIM.POOL.x*40+20); basin.setAttribute("cy",SIM.POOL.y*40+20); basin.setAttribute("r",17);
+    basin.setAttribute("fill",pIn>0?"#7fc8f0":"#3d5a73"); basin.setAttribute("stroke","#9fd4f5"); basin.setAttribute("stroke-width","2");
+    svg.appendChild(basin);
+    const pLab=document.createElementNS(NS,"text");
+    pLab.setAttribute("x",SIM.POOL.x*40+20); pLab.setAttribute("y",SIM.POOL.y*40+24); pLab.setAttribute("text-anchor","middle");
+    pLab.setAttribute("font-size","11"); pLab.setAttribute("fill",pIn>0?"#0e2f42":"#9fd4f5"); pLab.textContent=pIn+"/2";
+    svg.appendChild(pLab);
+    // gate
+    const dx=SIM.GATE.x*40, dy=SIM.GATE.y*40;
+    for(let i=0;i<3;i++){
+      const bar=document.createElementNS(NS,"rect");
+      bar.setAttribute("x",dx+8+i*10); bar.setAttribute("y",dy+(res&&res.gate?-34:4)); bar.setAttribute("width",6); bar.setAttribute("height",34);
+      bar.setAttribute("fill","#8b93a0"); bar.setAttribute("rx",2); svg.appendChild(bar);
+    }
+    // sensors
+    stones.forEach((s,i)=>{
+      let hot=0;
+      if(res){ for(const mo of res.motes){ const d=Math.abs(mo.x-s[0])+Math.abs(mo.y-s[1]); if(d<=3){ hot=Math.max(hot,1/(d+1)); } } }
+      const c=document.createElementNS(NS,"circle");
+      c.setAttribute("cx",s[0]*40+20); c.setAttribute("cy",s[1]*40+20); c.setAttribute("r",10);
+      c.setAttribute("fill",hot?"#ffd166":"#5b6b7a"); c.setAttribute("stroke","#8a93a0");
+      const ring=document.createElementNS(NS,"circle");
+      ring.setAttribute("cx",s[0]*40+20); ring.setAttribute("cy",s[1]*40+20); ring.setAttribute("r",hot?16:0);
+      ring.setAttribute("fill","#ffd166"); ring.setAttribute("opacity",0.25);
+      svg.append(ring,c);
+    });
+    // actuators
+    bells.forEach((b,i)=>{
+      const on = res&&res.resonance ? (res.resonance["BELL"+(i+1)]>0) : false;
+      const c=document.createElementNS(NS,"circle");
+      c.setAttribute("cx",b[0]*40+20); c.setAttribute("cy",b[1]*40+20); c.setAttribute("r",12);
+      c.setAttribute("fill",on?"#f0a05a":"#6b5f4a"); c.setAttribute("stroke","#8a7d63");
+      const r=document.createElementNS(NS,"rect");
+      r.setAttribute("x",b[0]*40+12); r.setAttribute("y",b[1]*40+8); r.setAttribute("width",16); r.setAttribute("height",6);
+      r.setAttribute("fill",on?"#ffd166":"#8a7d63");
+      svg.append(c,r);
+    });
+    pipes.forEach((p,i)=>{
+      const on = res&&res.resonance ? (res.resonance["PIPE"+(i+1)]>0) : false;
+      const c=document.createElementNS(NS,"rect");
+      c.setAttribute("x",p[0]*40+8); c.setAttribute("y",p[1]*40+10); c.setAttribute("width",24); c.setAttribute("height",18);
+      c.setAttribute("rx","6"); c.setAttribute("fill",on?"#f2b0c0":"#6b4a5a"); c.setAttribute("stroke","#8a6272");
+      svg.append(c);
+    });
+    // explorer
+    const px=res?res.px:SIM.START.x, py=res?res.py:SIM.START.y;
+    svg.appendChild(pip(px,py));
+    const lab=document.createElementNS(NS,"text");
+    lab.setAttribute("x",10); lab.setAttribute("y",18); lab.setAttribute("font-size","12"); lab.setAttribute("fill","#c9c2d4");
+    lab.textContent="The motes are invisible. Only the stones sing.";
+    svg.appendChild(lab);
+  }
+
+  function sensorHotList(){
+    const list=[];
+    stones.forEach((s,i)=>{
+      let hot=0;
+      if(res){ const m=res.motes; for(const mo of m){ const d=Math.abs(mo.x-s[0])+Math.abs(mo.y-s[1]); if(d<=3){ hot=Math.max(hot,1/(d+1)); } } }
+      list.push({name:"S"+(i+1),hot});
+    });
+    if(res){ let ph=0; for(const mo of res.motes){ const d=Math.abs(mo.x-SIM.POOL.x)+Math.abs(mo.y-SIM.POOL.y); if(d<=1) ph=Math.max(ph,1/(d+1)); } list.push({name:"SPOOL",hot:ph}); }
+    return list;
+  }
+  function renderReadout(){
+    const box=document.getElementById("readout");
+    box.innerHTML="";
+    for(const s of sensorHotList()){
+      const row=document.createElement("div"); row.className="sens";
+      const name=document.createElement("span"); name.style.width="58px"; name.textContent=s.name+" ";
+      const state=document.createElement("span"); state.textContent=s.hot>0?"HOT":"cold"; state.style.color=s.hot>0?"#b4533a":"#8a93a0";
+      const bar=document.createElement("div"); bar.className="bar";
+      const fill=document.createElement("i"); fill.style.width=(s.hot*100)+"%"; bar.appendChild(fill);
+      row.append(name,state,bar);
+      box.appendChild(row);
+    }
+  }
+
+  function logLine(m){ const el=document.getElementById("log"); el.textContent=m+"\n"+el.textContent; }
+  function updateHud(){
+    document.getElementById("tick").textContent=tick;
+    document.getElementById("pool").textContent=(res?res.poolCount:0)+"/2";
+    document.getElementById("gate").textContent=(res&&res.gate)?"OPEN":"SHUT";
+  }
+
+  function cfg(){
+    return {
+      stones:stones.map(s=>[s[0],s[1]]),
+      bells:bells.map(b=>[b[0],b[1]]),
+      pipes:pipes.map(p=>[p[0],p[1]]),
+      rules:rules.map(r=>({sensor:r.sensor,actuator:r.actuator})),
+      seed:seed,
+      plan:{moves:playerMoves},
+      maxT:400
+    };
+  }
+  let playerMoves=[];
+  function stepOnce(maxT){
+    const c=cfg(); c.maxT=maxT;
+    res=SIM.run(c);
+    tick=res.tick;
+    for(const e of res.events){ if(e.t>lastLogged){ logLine("t"+e.t+": "+e.m); lastLogged=e.t; } }
+    if(res.win){ running=false; if(timer){clearInterval(timer);timer=null;} document.getElementById("run").textContent="▶ Listen"; document.getElementById("win").classList.add("show"); }
+    render(); updateHud(); renderReadout();
+  }
+  document.getElementById("run").onclick=()=>{
+    if(running){ running=false; clearInterval(timer); timer=null; document.getElementById("run").textContent="▶ Listen"; return; }
+    tick=0; res=null; lastLogged=-1; playerMoves=[];
+    running=true; document.getElementById("run").textContent="⏸ Pause";
+    let t=0;
+    timer=setInterval(()=>{ t++; stepOnce(t); if(t>400){ running=false; clearInterval(timer); timer=null; document.getElementById("run").textContent="▶ Listen"; } },120);
+  };
+  document.getElementById("step").onclick=()=>stepOnce(Math.max(1,tick+1));
+  document.getElementById("reset").onclick=()=>{
+    running=false; if(timer){clearInterval(timer);timer=null;}
+    tick=0; res=null; lastLogged=-1; playerMoves=[];
+    document.getElementById("run").textContent="▶ Listen";
+    document.getElementById("win").classList.remove("show");
+    render(); updateHud(); renderReadout();
+  };
+  document.getElementById("reseed").onclick=()=>{ seed=(Math.random()*1e9)>>>0; tick=0; res=null; lastLogged=-1; logLine("🎲 New drift seeded."); render(); renderReadout(); };
+  document.getElementById("hint").onclick=()=>{
+    logLine("💡 Bells attract, pipes repel. Park a bell in the alcove so motes must cross the basin to reach it — then watch where your stones sing.");
+  };
+
+  // tools
+  const tools=document.querySelectorAll(".tool");
+  tools.forEach(t=>t.onclick=()=>{ tool=t.dataset.t; tools.forEach(x=>x.classList.remove("on")); t.classList.add("on"); });
+  svg.addEventListener("click",ev=>{
+    const rect=svg.getBoundingClientRect();
+    const cx=Math.floor((ev.clientX-rect.left)/ (rect.width/18)), cy=Math.floor((ev.clientY-rect.top)/(rect.height/12));
+    if(cx<0||cx>=18||cy<0||cy>=12) return;
+    if(SIM.wallCells.includes(cx+","+cy)) return;
+    if(cx===SIM.POOL.x&&cy===SIM.POOL.y) return;
+    if(cx===SIM.GATE.x&&cy===SIM.GATE.y) return;
+    const occ=(arr)=>arr.some(p=>p[0]===cx&&p[1]===cy);
+    if(tool==="erase"){
+      stones=stones.filter(p=>!(p[0]===cx&&p[1]===cy));
+      bells=bells.filter(p=>!(p[0]===cx&&p[1]===cy));
+      pipes=pipes.filter(p=>!(p[0]===cx&&p[1]===cy));
+    } else if(tool==="stone"){
+      if(!occ(stones)&&!occ(bells)&&!occ(pipes)&&stones.length<4) stones.push([cx,cy]);
+    } else if(tool==="bell"){
+      if(!occ(stones)&&!occ(bells)&&!occ(pipes)&&bells.length<3) bells.push([cx,cy]);
+    } else if(tool==="pipe"){
+      if(!occ(stones)&&!occ(bells)&&!occ(pipes)&&pipes.length<3) pipes.push([cx,cy]);
+    }
+    render(); renderReadout();
+  });
+
+  // rules UI
+  function sensorOptions(){
+    const opts=["SPOOL"];
+    stones.forEach((s,i)=>opts.push("S"+(i+1)));
+    return opts;
+  }
+  function actuatorOptions(){
+    const opts=[];
+    bells.forEach((b,i)=>opts.push("BELL"+(i+1)));
+    pipes.forEach((p,i)=>opts.push("PIPE"+(i+1)));
+    return opts;
+  }
+  function renderRules(){
+    const box=document.getElementById("rules");
+    box.innerHTML="";
+    rules.forEach((r,i)=>{
+      const row=document.createElement("div"); row.className="rule-row";
+      const lab1=document.createElement("span"); lab1.textContent="IF";
+      const selS=document.createElement("select");
+      for(const o of sensorOptions()){ const op=document.createElement("option"); op.value=o; op.textContent=o+" HOT"; if(r.sensor===o) op.selected=true; selS.appendChild(op); }
+      selS.onchange=()=>{ r.sensor=selS.value; };
+      const lab2=document.createElement("span"); lab2.textContent="→";
+      const selA=document.createElement("select");
+      for(const o of actuatorOptions()){ const op=document.createElement("option"); op.value=o; op.textContent=o+" ON"; if(r.actuator===o) op.selected=true; selA.appendChild(op); }
+      selA.onchange=()=>{ r.actuator=selA.value; };
+      const x=document.createElement("button"); x.className="x-btn"; x.textContent="✕"; x.style.cssText="border:none;background:transparent;color:#c0392b;cursor:pointer;";
+      x.onclick=()=>{ rules.splice(i,1); if(!rules.length) rules.push({sensor:"SPOOL",actuator:"BELL1"}); renderRules(); };
+      row.append(lab1,selS,lab2,selA,x);
+      box.appendChild(row);
+    });
+  }
+  document.getElementById("addRule").onclick=()=>{
+    const sa=sensorOptions()[0]||"SPOOL", aa=actuatorOptions()[0]||"BELL1";
+    rules.push({sensor:sa,actuator:aa}); renderRules();
+  };
+
+  // live movement
+  const KEYDIR={ArrowUp:'U',ArrowDown:'D',ArrowLeft:'L',ArrowRight:'R',w:'U',s:'D',a:'L',d:'R'};
+  window.addEventListener("keydown",e=>{
+    const k=KEYDIR[e.key]||KEYDIR[e.key.toLowerCase()];
+    if(!k) return;
+    e.preventDefault();
+    playerMoves.push([tick,k]);
+    stepOnce(Math.max(1,tick+1));
+  });
+
+  renderRules(); render(); updateHud(); renderReadout();
+}
+if (typeof window!=='undefined' && typeof document!=='undefined') boot();
+</script>
+</body>
+</html>

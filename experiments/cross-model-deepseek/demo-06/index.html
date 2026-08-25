@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Demo 06 — Mimic Moss</title>
+<style>
+  :root{ --ink:#26313b; --panel:#ffffff; --line:#dfe6ec; --accent:#4a7d3a; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:"Segoe UI",system-ui,sans-serif; background:#eef2f6; color:var(--ink); }
+  header{ display:flex; align-items:baseline; gap:16px; padding:10px 18px; background:var(--panel); border-bottom:1px solid var(--line); }
+  header h1{ font-size:17px; margin:0; } header a{ color:#7a8794; font-size:13px; text-decoration:none; }
+  header .tag{ font-size:11px; background:#e9f3e4; color:var(--accent); padding:2px 8px; border-radius:10px; }
+  main{ display:flex; gap:16px; padding:16px; flex-wrap:wrap; }
+  .world{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; min-width:300px; flex:1; }
+  h2{ font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:#7a8794; margin:6px 0 8px; }
+  .tools{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+  .tool{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:6px 10px; font-size:12px; cursor:pointer; }
+  .tool.on{ background:var(--accent); color:#fff; border-color:var(--accent); }
+  .btn{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 14px; font-size:13px; cursor:pointer; }
+  .btn.primary{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn:disabled{ opacity:.45; cursor:default; }
+  .hud{ display:flex; gap:14px; font-size:13px; margin-bottom:8px; flex-wrap:wrap; }
+  #log{ background:#f6f9fb; border:1px solid var(--line); border-radius:8px; padding:8px; font-size:12px; height:110px; overflow-y:auto; white-space:pre-line; }
+  .hint{ font-size:11px; color:#7a8794; }
+  #win{ display:none; position:fixed; inset:0; background:rgba(255,255,255,.85); z-index:9; align-items:center; justify-content:center; flex-direction:column; }
+  #win.show{ display:flex; }
+</style>
+</head>
+<body>
+<header>
+  <h1>06 · Mimic Moss</h1>
+  <span class="tag">state metamorphosis &amp; wiring</span>
+  <a href="../index.html">← portal</a>
+</header>
+<main>
+  <div class="world">
+    <div class="hud"><span>tick <b id="tick">0</b></span><span>flower <b id="fl">dormant</b></span><span>spores <b id="sp">none</b></span></div>
+    <svg id="svg" width="640" height="480" viewBox="0 0 640 480"></svg>
+  </div>
+  <div class="panel">
+    <h2>The Gardener's Tools</h2>
+    <p class="hint">Light travels only through moss — one cell per tick. Plain moss passes its color; <b>dye moss turns red into blue</b>. The flower opens only when it receives <b>red first, then blue</b>. The poison fern blooms and spores if any light touches it. The garden sprouts on its own — keep it trimmed.</p>
+    <div class="tools">
+      <button class="tool" data-t="plant">🌱 plant moss</button>
+      <button class="tool" data-t="dye">💜 plant dye</button>
+      <button class="tool" data-t="prune">✂️ prune</button>
+      <button class="tool" data-t="walk">✋ walk</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+      <button class="btn primary" id="run">▶ Grow</button>
+      <button class="btn" id="step">Step</button>
+      <button class="btn" id="reset">↺ Reset</button>
+    </div>
+    <div style="margin-top:6px;"><button class="btn" id="hint">💡 hint</button></div>
+    <h2>Garden Diary</h2>
+    <div id="log">The prism glows red at the far wall. The moss stub you planted years ago dies at a gap. The key flower at the tunnel stays dormant, waiting for a color it has never seen.</div>
+  </div>
+</main>
+<div id="win"><h1 style="color:var(--accent)">The flower blooms — the tunnel opens!</h1><p>Red first, then blue. You wired the garden's own logic. Reset to grow again.</p></div>
+
+<script>
+"use strict";
+/* ============ PURE SIM CORE (no DOM) ============ */
+const SIM=(function(){
+  const W=16,H=12;
+  const PRISM={x:1,y:2}, FLOWER={x:13,y:5}, FERN={x:8,y:2}, START={x:2,y:8};
+  const wall=new Set();
+  for(let x=0;x<W;x++){ wall.add(x+",0"); wall.add(x+","+(H-1)); }
+  for(let y=0;y<H;y++){ wall.add("0,"+y); wall.add((W-1)+","+y); }
+  const isWall=(x,y)=>wall.has(x+","+y);
+  const inFernRing=(x,y)=>Math.abs(x-FERN.x)<=1&&Math.abs(y-FERN.y)<=1;
+  const neighs=(x,y)=>[[x+1,y],[x-1,y],[x,y+1],[x,y-1]];
+
+  function makeRng(seed){ let s=seed>>>0; return ()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; }; }
+
+  function run(cfg){
+    // cfg: {plants:[[x,y,type]...], seed, plan:{moves}, maxT}
+    const rng=makeRng(cfg.seed||7);
+    const plants=cfg.plants.map(p=>({x:p[0],y:p[1],type:p[2]||1}));
+    let px=START.x, py=START.y;
+    let bloomed=false, win=false, firstColor=null, secondColor=null, spores=0, fernLit=false;
+    const events=[]; const push=m=>events.push({t:tick,m});
+    const moves=(cfg.plan&&cfg.plan.moves)||[];
+    const at=(x,y)=>plants.some(p=>p.x===x&&p.y===y);
+
+    // synchronous BFS light propagation from the prism
+    function propagate(){
+      let lit={"1,2":{color:'R',dist:0}};   // prism is an eternal red source
+      for(let step=0;step<40;step++){
+        const newLit={...lit};
+        for(const p of plants){
+          const k=p.x+","+p.y;
+          if(newLit[k]) continue;
+          let best=null;
+          for(const [nx,ny] of neighs(p.x,p.y)){
+            if(nx===PRISM.x&&ny===PRISM.y){ const cand={color:'R',dist:0}; if(!best||cand.dist<best.dist||(cand.dist===best.dist&&cand.color==='R')) best=cand; continue; }
+            const nk=nx+","+ny;
+            if(lit[nk]){ const cand=lit[nk]; if(!best||cand.dist<best.dist||(cand.dist===best.dist&&cand.color==='R')) best=cand; }
+          }
+          if(best){ newLit[k]={color: p.type===2?'B':best.color, dist:best.dist+1}; }
+        }
+        lit=newLit;
+      }
+      return lit;
+    }
+
+    let tick;
+    for(tick=0; tick<(cfg.maxT||160) && !win; tick++){
+      let lit=propagate();
+      // time-resolved visibility: only light that has arrived by this tick counts
+      const litNow=(x,y)=>{ const k=x+","+y; const L=lit[k]; return L&&L.dist<=tick; };
+      // flower reception
+      const adjFlower=neighs(FLOWER.x,FLOWER.y).filter(([x,y])=>litNow(x,y));
+      if(spores>0){
+        firstColor=null; secondColor=null;
+        push("The petals are clamped shut under spores.");
+      } else {
+        for(const [x,y] of adjFlower){
+          const c=lit[x+","+y].color;
+          if(firstColor===null){ firstColor=c; }
+          else if(c!==firstColor && secondColor===null){ secondColor=c; }
+        }
+        if(firstColor==='R'&&secondColor==='B'&&!bloomed){ bloomed=true; push("The flower blooms — RED first, then BLUE. The tunnel opens."); }
+      }
+      // fern
+      fernLit = neighs(FERN.x,FERN.y).some(([x,y])=>litNow(x,y));
+      if(fernLit){ if(spores<5) spores=5; if(tick%3===0) push("The poison fern is LIT — spores billow!"); }
+      else if(spores>0){ spores--; }
+      // sprouts (the garden grows)
+      if(tick>0&&tick%6===0){
+        const mature=plants.filter(p=>{ const L=lit[p.x+","+p.y]; return L&&L.dist<=tick&&L.dist>=3; });
+        for(const p of mature){
+          if(rng()<0.18){
+            const cands=neighs(p.x,p.y).filter(([x,y])=> !isWall(x,y)&&!at(x,y)&&!(x===PRISM.x&&y===PRISM.y)&&!(x===FLOWER.x&&y===FLOWER.y)&&!(x===FERN.x&&y===FERN.y)&&!inFernRing(x,y));
+            if(cands.length){ const [sx,sy]=cands[Math.floor(rng()*cands.length)]; plants.push({x:sx,y:sy,type:1}); push("🌿 The moss sprouts at "+sx+","+sy+"."); }
+          }
+        }
+      }
+      // explorer
+      for(const mv of moves){
+        if(mv[0]!==tick) continue;
+        const dd={U:[0,-1],D:[0,1],L:[-1,0],R:[1,0]}[mv[1]];
+        const nx=px+dd[0], ny=py+dd[1];
+        if(nx<0||nx>=W||ny<0||ny>=H) continue;
+        if(isWall(nx,ny)) continue;
+        if(nx===FLOWER.x&&ny===FLOWER.y&&!bloomed) continue;
+        px=nx; py=ny;
+      }
+      if(px===FLOWER.x&&py===FLOWER.y&&bloomed){ win=true; push("You step into the tunnel. WIN"); break; }
+    }
+    const finalLit={}; const fl=propagate(); for(const k in fl){ if(fl[k].dist<=tick) finalLit[k]=fl[k]; }
+    return {win,tick,events,px,py,spores,fernLit,firstColor,secondColor,lit:finalLit,plants:plants.map(p=>({x:p.x,y:p.y,type:p.type}))};
+  }
+  return {run,W,H,PRISM,FLOWER,FERN,START,wallCells:[...wall],isWall,neighs};
+})();
+if (typeof module!=='undefined' && module.exports) module.exports = { SIM };
+/* ============ UI ============ */
+function boot(){
+  const NS="http://www.w3.org/2000/svg";
+  const svg=document.getElementById("svg");
+  // THE intuitive-but-wrong initial garden: a moss stub with a gap
+  let plants=[[2,2,1],[3,2,1],[4,2,1],[5,2,1]];
+  let tool="plant", running=false, timer=null, tick=0, res=null, lastLogged=-1, playerMoves=[];
+  let seed=(Math.random()*1e9)>>>0;
+
+  function pip(x,y){
+    const g2=document.createElementNS(NS,"g");
+    const body=document.createElementNS(NS,"ellipse");
+    body.setAttribute("cx",20); body.setAttribute("cy",24); body.setAttribute("rx",13); body.setAttribute("ry",12);
+    body.setAttribute("fill","#37c8a5"); body.setAttribute("stroke","#1e8a70"); body.setAttribute("stroke-width","2");
+    const a1=document.createElementNS(NS,"path");
+    a1.setAttribute("d","M20 12 Q20 6 25 5"); a1.setAttribute("stroke","#1e8a70"); a1.setAttribute("stroke-width","2"); a1.setAttribute("fill","none");
+    const tip=document.createElementNS(NS,"circle");
+    tip.setAttribute("cx",25); tip.setAttribute("cy",5); tip.setAttribute("r",2.6); tip.setAttribute("fill","#ffd166");
+    g2.append(body,a1,tip);
+    for(const px of [13.5,26.5]){
+      const e=document.createElementNS(NS,"ellipse");
+      e.setAttribute("cx",px); e.setAttribute("cy",21); e.setAttribute("rx",4.5); e.setAttribute("ry",5);
+      e.setAttribute("fill","#fff"); e.setAttribute("stroke","#1e8a70"); e.setAttribute("stroke-width","1.5");
+      const p=document.createElementNS(NS,"circle");
+      p.setAttribute("cx",px+(px<20?1:-1)); p.setAttribute("cy",21); p.setAttribute("r",2.3); p.setAttribute("fill","#222");
+      g2.append(e,p);
+    }
+    g2.setAttribute("transform","translate("+(x*40-20)+","+(y*40-24)+")");
+    return g2;
+  }
+
+  function render(){
+    while(svg.firstChild) svg.removeChild(svg.firstChild);
+    const lit = res?res.lit:null;
+    const gnd=document.createElementNS(NS,"rect");
+    gnd.setAttribute("x",0); gnd.setAttribute("y",0); gnd.setAttribute("width",640); gnd.setAttribute("height",480);
+    gnd.setAttribute("fill","#eef3e6"); svg.appendChild(gnd);
+    for(let x=0;x<16;x++) for(let y=0;y<12;y++){
+      const r=document.createElementNS(NS,"rect");
+      r.setAttribute("x",x*40); r.setAttribute("y",y*40); r.setAttribute("width",40); r.setAttribute("height",40);
+      r.setAttribute("fill",(x+y)%2?"#e9f0dc":"#e4ecd4"); svg.appendChild(r);
+    }
+    // walls (garden fence)
+    for(const key of SIM.wallCells){
+      const [x,y]=key.split(",").map(Number);
+      const r=document.createElementNS(NS,"rect");
+      r.setAttribute("x",x*40); r.setAttribute("y",y*40); r.setAttribute("width",40); r.setAttribute("height",40);
+      r.setAttribute("fill","#7a8b6a"); r.setAttribute("stroke","#5f6e52"); svg.appendChild(r);
+    }
+    // prism
+    const pr=document.createElementNS(NS,"polygon");
+    pr.setAttribute("points","55,95 85,75 85,115"); pr.setAttribute("fill","#ff8f6b"); pr.setAttribute("stroke","#c95f3a");
+    svg.appendChild(pr);
+    const prl=document.createElementNS(NS,"text");
+    prl.setAttribute("x",46); prl.setAttribute("y",130); prl.setAttribute("font-size","10"); prl.setAttribute("fill","#c95f3a"); prl.textContent="RED";
+    svg.appendChild(prl);
+    // fern + sterile ring
+    for(const [fx,fy] of SIM.neighs(SIM.FERN.x,SIM.FERN.y)){
+      const r=document.createElementNS(NS,"rect");
+      r.setAttribute("x",fx*40); r.setAttribute("y",fy*40); r.setAttribute("width",40); r.setAttribute("height",40);
+      r.setAttribute("fill","#d8d2c2"); r.setAttribute("opacity",0.5); svg.appendChild(r);
+    }
+    const fernLit = res?res.fernLit:false;
+    const fg=document.createElementNS(NS,"g");
+    const stem=document.createElementNS(NS,"path");
+    stem.setAttribute("d","M"+(SIM.FERN.x*40+20)+" "+(SIM.FERN.y*40+30)+" v-16");
+    stem.setAttribute("stroke",fernLit?"#e8623a":"#5f6e52"); stem.setAttribute("stroke-width","3");
+    const l1=document.createElementNS(NS,"path");
+    l1.setAttribute("d","M"+(SIM.FERN.x*40+20)+" "+(SIM.FERN.y*40+24)+" q-10 -4 -10 -12"); l1.setAttribute("stroke",fernLit?"#e8623a":"#5f6e52"); l1.setAttribute("stroke-width","2"); l1.setAttribute("fill","none");
+    const l2=document.createElementNS(NS,"path");
+    l2.setAttribute("d","M"+(SIM.FERN.x*40+20)+" "+(SIM.FERN.y*40+24)+" q10 -4 10 -12"); l2.setAttribute("stroke",fernLit?"#e8623a":"#5f6e52"); l2.setAttribute("stroke-width","2"); l2.setAttribute("fill","none");
+    fg.append(stem,l1,l2); svg.appendChild(fg);
+    // flower (tunnel)
+    const fX=SIM.FLOWER.x*40+20, fY=SIM.FLOWER.y*40+20;
+    const bloomed=res?res.firstColor==='R'&&res.secondColor==='B':false;
+    const fl=document.createElementNS(NS,"g");
+    if(bloomed){
+      for(let i=0;i<6;i++){
+        const p=document.createElementNS(NS,"ellipse");
+        p.setAttribute("cx",fX+Math.cos(i/6*6.28)*9); p.setAttribute("cy",fY+Math.sin(i/6*6.28)*9); p.setAttribute("rx",6); p.setAttribute("ry",4);
+        p.setAttribute("fill","#f28bb2"); p.setAttribute("transform","rotate("+(i*60)+" "+(fX+Math.cos(i/6*6.28)*9)+" "+(fY+Math.sin(i/6*6.28)*9)+")");
+        fl.appendChild(p);
+      }
+      const c=document.createElementNS(NS,"circle");
+      c.setAttribute("cx",fX); c.setAttribute("cy",fY); c.setAttribute("r",5); c.setAttribute("fill","#ffd166"); fl.appendChild(c);
+    } else {
+      const bud=document.createElementNS(NS,"path");
+      bud.setAttribute("d","M"+fX+" "+(fY-12)+" q8 10 0 14 q-8 -4 0 -14");
+      bud.setAttribute("fill","#9aa8a0"); svg.appendChild(bud);
+      const col=document.createElementNS(NS,"circle");
+      col.setAttribute("cx",fX); col.setAttribute("cy",fY-4); col.setAttribute("r",3);
+      col.setAttribute("fill",res&&res.firstColor==='R'?"#e8623a":res&&res.secondColor==='B'?"#3a6fd8":"#c9d2cb");
+      svg.appendChild(col);
+    }
+    svg.appendChild(fl);
+    // moss
+    for(const p of plants){
+      const k=p.x+","+p.y;
+      const isLit=lit&&lit[k];
+      const color = isLit ? (isLit.color==='R'?"#e8623a":"#3a6fd8") : "#79a860";
+      const r=document.createElementNS(NS,"circle");
+      r.setAttribute("cx",p.x*40+20); r.setAttribute("cy",p.y*40+20); r.setAttribute("r",isLit?13:11);
+      r.setAttribute("fill",color); r.setAttribute("opacity",isLit?0.95:0.55);
+      const ring=document.createElementNS(NS,"circle");
+      ring.setAttribute("cx",p.x*40+20); ring.setAttribute("cy",p.y*40+20); ring.setAttribute("r",isLit?17:0);
+      ring.setAttribute("fill",color); ring.setAttribute("opacity",0.25);
+      svg.append(ring,r);
+      if(p.type===2){
+        const d=document.createElementNS(NS,"circle");
+        d.setAttribute("cx",p.x*40+20); d.setAttribute("cy",p.y*40+20); d.setAttribute("r",4);
+        d.setAttribute("fill","#6b4a8a"); svg.appendChild(d);
+      }
+    }
+    // spores visual
+    if(res&&res.spores>0){
+      for(let i=0;i<10;i++){
+        const sp=document.createElementNS(NS,"circle");
+        sp.setAttribute("cx",SIM.FLOWER.x*40+20+Math.sin(tick*0.7+i*1.3)*18);
+        sp.setAttribute("cy",SIM.FLOWER.y*40+20+Math.cos(tick*0.6+i*1.7)*14);
+        sp.setAttribute("r",2); sp.setAttribute("fill","#b98b4a"); sp.setAttribute("opacity",0.7);
+        svg.appendChild(sp);
+      }
+    }
+    // explorer
+    const px=res?res.px:SIM.START.x, py=res?res.py:SIM.START.y;
+    svg.appendChild(pip(px,py));
+    const lab=document.createElementNS(NS,"text");
+    lab.setAttribute("x",10); lab.setAttribute("y",18); lab.setAttribute("font-size","12"); lab.setAttribute("fill","#7a8794");
+    lab.textContent="Light travels only through moss. Dye turns red → blue. The fern must stay dark.";
+    svg.appendChild(lab);
+  }
+
+  function logLine(m){ const el=document.getElementById("log"); el.textContent=m+"\n"+el.textContent; }
+  function updateHud(){
+    document.getElementById("tick").textContent=tick;
+    const seq = res ? (res.firstColor==='R'?(res.secondColor==='B'?"BLOOMED":res.secondColor==='R'?"red, red…":"red…"):(res.firstColor||"…")) : "dormant";
+    document.getElementById("fl").textContent=seq;
+    document.getElementById("sp").textContent=(res&&res.spores>0)?"BILLOWING!":"none";
+  }
+  function cfg(maxT){
+    return {plants:plants.map(p=>[p[0],p[1],p[2]]), seed, plan:{moves:playerMoves}, maxT};
+  }
+  function stepOnce(maxT){
+    const c=cfg(maxT);
+    res=SIM.run(c);
+    tick=res.tick;
+    for(const e of res.events){ if(e.t>lastLogged){ logLine("t"+e.t+": "+e.m); lastLogged=e.t; } }
+    if(res.win){ running=false; if(timer){clearInterval(timer);timer=null;} document.getElementById("run").textContent="▶ Grow"; document.getElementById("win").classList.add("show"); }
+    render(); updateHud();
+  }
+  document.getElementById("run").onclick=()=>{
+    if(running){ running=false; clearInterval(timer); timer=null; document.getElementById("run").textContent="▶ Grow"; return; }
+    tick=0; res=null; lastLogged=-1; playerMoves=[];
+    running=true; document.getElementById("run").textContent="⏸ Pause";
+    let t=0;
+    timer=setInterval(()=>{ t++; stepOnce(t); if(t>160){ running=false; clearInterval(timer); timer=null; document.getElementById("run").textContent="▶ Grow"; } },220);
+  };
+  document.getElementById("step").onclick=()=>stepOnce(Math.max(1,tick+1));
+  document.getElementById("reset").onclick=()=>{
+    running=false; if(timer){clearInterval(timer);timer=null;}
+    tick=0; res=null; lastLogged=-1; playerMoves=[];
+    document.getElementById("run").textContent="▶ Grow";
+    document.getElementById("win").classList.remove("show");
+    document.getElementById("log").textContent="The prism glows red at the far wall. The moss stub you planted years ago dies at a gap. The key flower at the tunnel stays dormant, waiting for a color it has never seen.";
+    render(); updateHud();
+  };
+  document.getElementById("hint").onclick=()=>{
+    logLine("💡 Wire two branches: a shorter red path to the flower, a LONGER blue path (via one dye) — red must arrive first, blue second. Keep the light away from the fern. Trim the sprouts.");
+  };
+
+  const tools=document.querySelectorAll(".tool");
+  tools.forEach(t=>t.onclick=()=>{ tool=t.dataset.t; tools.forEach(x=>x.classList.remove("on")); t.classList.add("on"); });
+  svg.addEventListener("click",ev=>{
+    const rect=svg.getBoundingClientRect();
+    const cx=Math.floor((ev.clientX-rect.left)/(rect.width/16)), cy=Math.floor((ev.clientY-rect.top)/(rect.height/12));
+    if(cx<0||cx>=16||cy<0||cy>=12) return;
+    if(SIM.isWall(cx,cy)) return;
+    if(cx===SIM.PRISM.x&&cy===SIM.PRISM.y) return;
+    if(cx===SIM.FLOWER.x&&cy===SIM.FLOWER.y) return;
+    if(cx===SIM.FERN.x&&cy===SIM.FERN.y) return;
+    const idx=plants.findIndex(p=>p[0]===cx&&p[1]===cy);
+    if(tool==="prune"){
+      if(idx>=0) plants.splice(idx,1);
+    } else if(tool==="plant"){
+      if(idx>=0) plants[idx]=[cx,cy,1]; else plants.push([cx,cy,1]);
+    } else if(tool==="dye"){
+      if(idx>=0) plants[idx]=[cx,cy,2]; else plants.push([cx,cy,2]);
+    }
+    render(); updateHud();
+  });
+
+  const KEYDIR={ArrowUp:'U',ArrowDown:'D',ArrowLeft:'L',ArrowRight:'R',w:'U',s:'D',a:'L',d:'R'};
+  window.addEventListener("keydown",e=>{
+    const k=KEYDIR[e.key]||KEYDIR[e.key.toLowerCase()];
+    if(!k) return;
+    e.preventDefault();
+    playerMoves.push([tick,k]);
+    stepOnce(Math.max(1,tick+1));
+  });
+  render(); updateHud();
+}
+if (typeof window!=='undefined' && typeof document!=='undefined') boot();
+</script>
+</body>
+</html>
