@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Market Parcel Belt</title>
+  <style>
+    :root {
+      --ink: #22211f;
+      --paper: #f5edda;
+      --line: #403a30;
+      --red: #c6513d;
+      --green: #4c8453;
+      --blue: #477ca8;
+      --gold: #c28b32;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background: #d9c8a6;
+      font-family: "Trebuchet MS", system-ui, sans-serif;
+    }
+
+    main {
+      width: min(960px, 94vw);
+      margin: 0 auto;
+      padding: 28px 0 36px;
+    }
+
+    h1, h2, p { margin-top: 0; }
+    h1 { margin-bottom: 6px; font-size: clamp(1.7rem, 4vw, 2.6rem); }
+    h2 { font-size: 1rem; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .08em; }
+
+    .subhead { margin-bottom: 20px; max-width: 660px; }
+
+    .panel {
+      border: 3px solid var(--line);
+      border-radius: 12px;
+      background: var(--paper);
+      box-shadow: 5px 5px 0 rgba(64, 58, 48, .25);
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 16px;
+      margin-bottom: 18px;
+    }
+
+    .stats { display: flex; flex-wrap: wrap; gap: 16px; font-weight: 700; }
+    .stats span { white-space: nowrap; }
+
+    .program-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      padding: 14px 16px;
+      margin-bottom: 18px;
+      align-items: end;
+    }
+
+    .program-panel h2 { margin-bottom: 5px; }
+    .program-panel p { margin-bottom: 8px; font-size: .9rem; color: #655b4d; }
+    #ruleEditor {
+      width: 100%;
+      min-height: 104px;
+      padding: 9px 10px;
+      border: 2px solid #897d68;
+      border-radius: 6px;
+      color: var(--ink);
+      background: #fff8e9;
+      font: 700 .94rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+      resize: vertical;
+    }
+    #ruleEditor:focus { outline: 3px solid #e7b54e; outline-offset: 2px; }
+    .program-actions { display: grid; gap: 8px; min-width: 170px; }
+    #runRule { background: var(--green); }
+    #ruleStatus { min-height: 2.4em; font-size: .82rem; color: #655b4d; }
+
+    button {
+      border: 2px solid var(--line);
+      border-radius: 8px;
+      color: var(--paper);
+      background: var(--ink);
+      padding: 9px 14px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:hover, button:focus-visible { transform: translateY(-1px); }
+    button:focus-visible { outline: 3px solid #e7b54e; outline-offset: 2px; }
+    button:disabled { opacity: .45; cursor: default; transform: none; }
+
+    .scene {
+      display: grid;
+      grid-template-columns: minmax(220px, .85fr) minmax(340px, 1.5fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .belt-panel, .stall-panel { padding: 16px; }
+
+    .parcel-stage {
+      min-height: 265px;
+      display: grid;
+      place-items: center;
+      border: 2px dashed #897d68;
+      border-radius: 8px;
+      background: #fff8e9;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .parcel-stage::after {
+      content: "";
+      position: absolute;
+      right: -18px;
+      bottom: 26px;
+      width: 130%;
+      height: 13px;
+      background: repeating-linear-gradient(90deg, #5b5549 0 24px, #918675 24px 34px);
+      border-top: 2px solid var(--line);
+      border-bottom: 2px solid var(--line);
+      transform: rotate(-3deg);
+      opacity: .75;
+    }
+
+    .parcel {
+      z-index: 1;
+      width: 142px;
+      min-height: 126px;
+      padding: 16px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      border: 3px solid var(--line);
+      border-radius: 6px;
+      background: #c99357;
+      box-shadow: 5px 5px 0 #9a6b3d;
+      transform: rotate(-2deg);
+    }
+
+    .parcel .mark { font-size: 3.4rem; line-height: 1; }
+    .parcel small { font-weight: 700; margin-top: 8px; }
+
+    .parcel.moving { animation: arrive .28s ease-out; }
+    .parcel.wrong { animation: wobble .35s ease-in-out; }
+
+    @keyframes arrive {
+      from { opacity: 0; transform: translateX(-45px) rotate(-8deg); }
+      to { opacity: 1; transform: translateX(0) rotate(-2deg); }
+    }
+    @keyframes wobble {
+      25% { transform: rotate(5deg); }
+      50% { transform: rotate(-5deg); }
+      75% { transform: rotate(3deg); }
+    }
+
+    .incoming { margin: 14px 0 0; color: #655b4d; font-size: .9rem; }
+    .queue { display: flex; gap: 7px; margin-top: 8px; }
+    .queue-dot {
+      width: 27px;
+      height: 27px;
+      display: grid;
+      place-items: center;
+      border: 2px solid var(--line);
+      border-radius: 4px;
+      background: #d9a66b;
+      font-size: 1.15rem;
+    }
+
+    .message {
+      min-height: 54px;
+      margin: 14px 0 0;
+      padding: 10px 12px;
+      border-left: 5px solid var(--blue);
+      background: #e4e9e1;
+      font-size: .93rem;
+    }
+    .message.bad { border-left-color: var(--red); background: #f5dcd2; }
+    .message.good { border-left-color: var(--green); background: #dcebd8; }
+
+    .stalls {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .stall {
+      min-height: 135px;
+      padding: 10px;
+      color: var(--ink);
+      background: #fff8e9;
+      text-align: left;
+      position: relative;
+    }
+    .stall:hover, .stall:focus-visible { background: #fff0c9; }
+    .stall .stall-mark { font-size: 2.2rem; display: block; text-align: center; margin: 5px 0 2px; }
+    .stall .name { display: block; text-align: center; font-size: .88rem; }
+    .stock { display: block; margin-top: 9px; padding-top: 7px; border-top: 1px solid #b5a891; font-size: .82rem; }
+    .stall.target { animation: target 1s ease-in-out 2; }
+    .stall.delivered { background: #e2efd8; }
+
+    @keyframes target {
+      50% { box-shadow: 0 0 0 5px #e0a52f, 5px 5px 0 rgba(64, 58, 48, .25); }
+    }
+
+    .progress {
+      height: 13px;
+      margin-top: 18px;
+      overflow: hidden;
+      border: 2px solid var(--line);
+      border-radius: 99px;
+      background: #c3b497;
+    }
+    .progress > div { height: 100%; width: 0; background: var(--green); transition: width .25s ease; }
+
+    .tip { margin: 16px 0 0; font-size: .88rem; color: #655b4d; }
+
+    @media (max-width: 680px) {
+      main { padding-top: 18px; }
+      .controls { align-items: flex-start; flex-direction: column; }
+      .scene { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Market Parcel Belt</h1>
+    <p class="subhead">The morning rush is here. Read the mark on the parcel, then send it to the stall carrying the same mark.</p>
+
+    <section class="controls panel" aria-label="Game controls and score">
+      <div class="stats">
+        <span>Delivered: <b id="score">0</b>/<b id="total">10</b></span>
+        <span>Time: <b id="timer">75</b>s</span>
+        <span>Misroutes: <b id="errors">0</b></span>
+      </div>
+      <button id="start" type="button">Reset / retry</button>
+    </section>
+
+    <section class="program-panel panel" aria-label="Editable courier routing rule">
+      <div>
+        <h2>Courier rule</h2>
+        <p>Edit a line, then press Run. Format: <b>parcel mark -&gt; stall mark</b>. Run routes the current parcel using your rule.</p>
+        <textarea id="ruleEditor" spellcheck="false" aria-label="Editable parcel routing rule">sun -> sun
+leaf -> leaf
+fish -> fish
+moon -> moon</textarea>
+      </div>
+      <div class="program-actions">
+        <button id="runRule" type="button">Run routing rule</button>
+        <span id="ruleStatus" aria-live="polite">Ready. Reset / retry starts a fresh belt.</span>
+      </div>
+    </section>
+
+    <section class="scene">
+      <section class="belt-panel panel" aria-live="polite">
+        <h2>Incoming parcel</h2>
+        <div id="parcelStage" class="parcel-stage">
+          <div id="parcel" class="parcel">
+            <span class="mark">?</span>
+            <small>Press “Start belt”</small>
+          </div>
+        </div>
+        <p class="incoming">Next on the belt:</p>
+        <div id="queue" class="queue" aria-label="Upcoming parcel marks"></div>
+        <div id="message" class="message">Every stall keeps the same mark as the parcels it serves.</div>
+      </section>
+
+      <section class="stall-panel panel">
+        <h2>Market stalls</h2>
+        <div id="stalls" class="stalls"></div>
+        <div class="progress" aria-label="Delivery progress"><div id="progressFill"></div></div>
+        <p class="tip">One parcel at a time. A wrong route costs a few seconds, but the parcel stays put so you can correct it.</p>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const stallData = [
+      { id: "sun", name: "Sun Bakery", glyph: "☀", color: "#c6513d" },
+      { id: "leaf", name: "Leaf Grocer", glyph: "✦", color: "#4c8453" },
+      { id: "fish", name: "Fishmonger", glyph: "◆", color: "#477ca8" },
+      { id: "moon", name: "Moon Tailor", glyph: "●", color: "#8a5a9c" }
+    ];
+
+    // The computational skeleton is deliberately small: mark -> stall.
+    const markToStall = { sun: "sun", leaf: "leaf", fish: "fish", moon: "moon" };
+    const parcelPlan = ["leaf", "moon", "sun", "fish", "moon", "leaf", "fish", "sun", "leaf", "sun"];
+
+    const state = {
+      current: 0,
+      delivered: 0,
+      errors: 0,
+      seconds: 75,
+      running: false,
+      timerId: null,
+      stocks: { sun: 0, leaf: 0, fish: 0, moon: 0 }
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const startButton = $("start");
+    const ruleEditor = $("ruleEditor");
+    const runRuleButton = $("runRule");
+
+    function stallById(id) {
+      return stallData.find((stall) => stall.id === id);
+    }
+
+    function renderStalls() {
+      $("stalls").innerHTML = stallData.map((stall) => `
+        <button class="stall" type="button" data-stall="${stall.id}" aria-label="Send parcel to ${stall.name}">
+          <span class="stall-mark" style="color:${stall.color}">${stall.glyph}</span>
+          <span class="name">${stall.name}</span>
+          <span class="stock">Parcels stored: <b id="stock-${stall.id}">0</b></span>
+        </button>
+      `).join("");
+
+      document.querySelectorAll("[data-stall]").forEach((button) => {
+        button.addEventListener("click", () => routeParcel(button.dataset.stall));
+      });
+    }
+
+    function render() {
+      $("score").textContent = state.delivered;
+      $("errors").textContent = state.errors;
+      $("timer").textContent = state.seconds;
+      $("progressFill").style.width = `${(state.delivered / parcelPlan.length) * 100}%`;
+
+      stallData.forEach((stall) => {
+        const stock = $(`stock-${stall.id}`);
+        if (stock) {
+          stock.textContent = state.stocks[stall.id];
+          stock.closest(".stall").classList.toggle("delivered", state.stocks[stall.id] > 0);
+        }
+      });
+
+      const currentMark = parcelPlan[state.current];
+      if (!currentMark || !state.running) return;
+
+      const stall = stallById(currentMark);
+      $("parcel").innerHTML = `<span class="mark" style="color:${stall.color}">${stall.glyph}</span><small>Mark: ${stall.name.replace(/ .*/, "")}</small>`;
+      $("parcel").className = "parcel moving";
+      $("queue").innerHTML = parcelPlan.slice(state.current + 1, state.current + 4).map((mark) => {
+        const next = stallById(mark);
+        return `<span class="queue-dot" title="${next.name}" style="color:${next.color}">${next.glyph}</span>`;
+      }).join("");
+    }
+
+    function setMessage(text, tone = "") {
+      const message = $("message");
+      message.textContent = text;
+      message.className = `message ${tone}`;
+    }
+
+    function parseRule() {
+      const parsed = {};
+      const invalid = [];
+      const validMarks = stallData.map((stall) => stall.id).join("|");
+      const rulePattern = new RegExp(`^(${validMarks})\\s*(?:->|=>|to)\\s*(${validMarks})$`, "i");
+
+      ruleEditor.value.split("\n").forEach((line, index) => {
+        const clean = line.trim();
+        if (!clean) return;
+        const match = clean.match(rulePattern);
+        if (!match) {
+          invalid.push(index + 1);
+          return;
+        }
+        parsed[match[1].toLowerCase()] = match[2].toLowerCase();
+      });
+
+      if (invalid.length) {
+        $("ruleStatus").textContent = `Fix line${invalid.length > 1 ? "s" : ""} ${invalid.join(", ")}; use mark -> stall mark.`;
+        setMessage("The rule did not run: one or more lines need the format mark -> stall mark.", "bad");
+        return null;
+      }
+      return parsed;
+    }
+
+    function highlightTarget(stallId) {
+      const target = document.querySelector(`[data-stall="${stallId}"]`);
+      if (!target) return;
+      target.classList.add("target");
+      setTimeout(() => target.classList.remove("target"), 2200);
+    }
+
+    function runRule() {
+      const parsed = parseRule();
+      if (!parsed) return;
+
+      if (!state.running) startGame();
+
+      const parcelMark = parcelPlan[state.current];
+      const chosenId = parsed[parcelMark];
+      const neededId = markToStall[parcelMark];
+      $("ruleStatus").textContent = `Running: ${parcelMark} -> ${chosenId || "no route"}`;
+
+      if (!chosenId) {
+        state.errors += 1;
+        state.seconds = Math.max(0, state.seconds - 3);
+        $("errors").textContent = state.errors;
+        $("timer").textContent = state.seconds;
+        highlightTarget(neededId);
+        const needed = stallById(neededId);
+        setMessage(`No rule route for this parcel. Its mark belongs at ${needed.name}. Edit the rule and Run again.`, "bad");
+        if (state.seconds <= 0) finish(false);
+        return;
+      }
+
+      routeParcel(chosenId);
+    }
+
+    function startGame() {
+      clearInterval(state.timerId);
+      state.current = 0;
+      state.delivered = 0;
+      state.errors = 0;
+      state.seconds = 75;
+      state.running = true;
+      state.stocks = { sun: 0, leaf: 0, fish: 0, moon: 0 };
+      startButton.textContent = "Reset / retry";
+      $("ruleStatus").textContent = "Rule loaded. Run it on the current parcel.";
+      setMessage("Edit the courier rule, then press Run to send the parcel to a stall.");
+      render();
+      state.timerId = setInterval(tick, 1000);
+    }
+
+    function tick() {
+      if (!state.running) return;
+      state.seconds -= 1;
+      $("timer").textContent = state.seconds;
+      if (state.seconds <= 0) finish(false);
+    }
+
+    function routeParcel(chosenId) {
+      if (!state.running) return;
+      const neededId = markToStall[parcelPlan[state.current]];
+      const chosen = stallById(chosenId);
+      const needed = stallById(neededId);
+      const parcel = $("parcel");
+
+      if (chosenId !== neededId) {
+        state.errors += 1;
+        state.seconds = Math.max(0, state.seconds - 3);
+        $("errors").textContent = state.errors;
+        $("timer").textContent = state.seconds;
+        parcel.className = "parcel wrong";
+        highlightTarget(neededId);
+        setMessage(`Misroute: ${chosen.name} cannot take this parcel. Its ${needed.name.replace(/ .*/, "")} mark belongs at ${needed.name}. Try again.`, "bad");
+        if (state.seconds <= 0) finish(false);
+        return;
+      }
+
+      state.stocks[chosenId] += 1;
+      state.delivered += 1;
+      state.current += 1;
+      setMessage(`Delivered to ${chosen.name}. That stall is stocked; the next parcel is rolling in.`, "good");
+      if (state.current >= parcelPlan.length) {
+        finish(true);
+      } else {
+        render();
+      }
+    }
+
+    function finish(won) {
+      state.running = false;
+      clearInterval(state.timerId);
+      if (won) {
+        $("parcel").innerHTML = `<span class="mark">✓</span><small>Market stocked!</small>`;
+        $("queue").innerHTML = "";
+        setMessage(`Rush complete: all ${parcelPlan.length} parcels reached their stalls.`, "good");
+      } else {
+        $("parcel").innerHTML = `<span class="mark">!</span><small>The belt stopped</small>`;
+        setMessage(`The belt stopped with ${parcelPlan.length - state.delivered} parcel(s) still waiting. Restart and use the marks as your routing rule.`, "bad");
+      }
+      $("parcel").className = "parcel";
+    }
+
+    startButton.addEventListener("click", startGame);
+    runRuleButton.addEventListener("click", runRule);
+    renderStalls();
+    render();
+  </script>
+</body>
+</html>

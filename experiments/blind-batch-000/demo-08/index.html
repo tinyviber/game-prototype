@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Night Shift: Signal Beacon Line</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #e9f0ee;
+      --muted: #9baaa6;
+      --panel: #17201f;
+      --panel-2: #202b29;
+      --line: #3b4b47;
+      --green: #82e0b0;
+      --yellow: #f1c96b;
+      --red: #f48a85;
+      --blue: #8cc8ed;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: #0d1212;
+      color: var(--ink);
+      font: 15px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    main { max-width: 980px; margin: 0 auto; padding: 24px 16px 40px; }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: end;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 18px;
+    }
+
+    h1, h2, p { margin: 0; }
+    h1 { font-size: clamp(22px, 4vw, 34px); letter-spacing: -1px; }
+    h2 { font-size: 14px; color: var(--muted); font-weight: 400; letter-spacing: .08em; text-transform: uppercase; }
+    .eyebrow { color: var(--green); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; margin-bottom: 5px; }
+    .brief { max-width: 500px; color: #c4d0cc; margin-top: 10px; }
+    .status-box { min-width: 170px; text-align: right; }
+    .status-label { color: var(--muted); font-size: 12px; }
+    #status { color: var(--yellow); font-size: 16px; margin-top: 3px; }
+
+    section { margin-top: 22px; }
+    .panel {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .rule {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 18px;
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 9px;
+    }
+
+    .rule span::before { content: "•"; color: var(--green); margin-right: 7px; }
+
+    .line-wrap { overflow-x: auto; padding-bottom: 4px; }
+    .line {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(135px, 1fr));
+      gap: 10px;
+      min-width: 760px;
+      margin-top: 14px;
+    }
+
+    .slot {
+      position: relative;
+      min-height: 132px;
+      border: 1px dashed #53615e;
+      border-radius: 7px;
+      background: #111918;
+      padding: 9px;
+      cursor: pointer;
+      transition: border-color .15s, transform .15s, background .15s;
+    }
+
+    .slot:hover { border-color: var(--green); background: #14201d; }
+    .slot.selected { border: 2px solid var(--yellow); padding: 8px; transform: translateY(-2px); }
+    .slot.active { border-color: var(--blue); box-shadow: 0 0 0 2px #8cc8ed33; }
+    .slot.failed { border-color: var(--red); }
+    .slot.done { border-color: var(--green); }
+    .slot-number { color: var(--muted); font-size: 11px; }
+    .station-name { font-size: 17px; color: var(--ink); margin-top: 13px; }
+    .station-id { color: var(--green); font-size: 12px; margin-top: 5px; }
+    .arrow { color: #6e7f7a; padding: 0 2px; }
+    .station-rule { color: var(--muted); font-size: 11px; margin-top: 10px; }
+    .station-rule b { color: #d5dfdc; font-weight: 400; }
+
+    .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+    button {
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--panel-2);
+      color: var(--ink);
+      cursor: pointer;
+      font: inherit;
+      padding: 9px 14px;
+    }
+    button:hover:not(:disabled) { border-color: var(--green); }
+    button:disabled { cursor: not-allowed; opacity: .45; }
+    #run { border-color: var(--green); color: var(--green); background: #163126; font-weight: 700; }
+    #reset { color: var(--muted); }
+    #hint { color: var(--muted); font-size: 12px; }
+
+    .meters { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+    .meter { border: 1px solid var(--line); background: #111918; border-radius: 6px; padding: 11px; }
+    .meter-label { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+    .meter-value { font-size: 24px; margin-top: 3px; }
+    #meter-finished { color: var(--green); }
+    #meter-jams { color: var(--red); }
+    #meter-time { color: var(--yellow); }
+
+    .log {
+      height: 190px;
+      overflow: auto;
+      margin-top: 12px;
+      border: 1px solid #2e3a37;
+      border-radius: 5px;
+      background: #0b100f;
+      padding: 11px;
+      color: #b7c5c0;
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+    .log .good { color: var(--green); }
+    .log .bad { color: var(--red); }
+    .log .note { color: var(--yellow); }
+    .log .dim { color: #70807b; }
+
+    .tags { display: inline-flex; gap: 4px; vertical-align: middle; flex-wrap: wrap; }
+    .tag { border: 1px solid #4b5d57; border-radius: 3px; padding: 1px 4px; color: var(--blue); font-size: 11px; }
+    .tag.raw { color: #d7a9e8; }
+    .tag.finished { color: var(--green); border-color: #4b8a68; }
+
+    .machine {
+      height: 26px;
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #111918;
+      margin-top: 15px;
+      overflow: hidden;
+    }
+    .belt { position: absolute; inset: 11px 8px 10px; border-top: 2px dashed #4b5b56; }
+    .piece {
+      position: absolute;
+      top: 5px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--yellow);
+      box-shadow: 0 0 0 3px #f1c96b2a;
+      transition: left .35s ease;
+    }
+    .piece.finished { background: var(--green); box-shadow: 0 0 0 3px #82e0b02a; }
+    .piece.jammed { background: var(--red); box-shadow: 0 0 0 3px #f48a852a; }
+
+    @media (max-width: 620px) {
+      header { display: block; }
+      .status-box { margin-top: 14px; text-align: left; }
+      .meters { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <div class="eyebrow">Night shift / line 03</div>
+        <h1>Signal Beacon Line</h1>
+        <p class="brief">Three raw blanks need to leave the factory as finished beacons. Arrange the stations once, then let the machine run hands-off.</p>
+      </div>
+      <div class="status-box">
+        <div class="status-label">LINE STATUS</div>
+        <div id="status" aria-live="polite">Awaiting order</div>
+      </div>
+    </header>
+
+    <section class="panel">
+      <h2>1 / Arrange the chain</h2>
+      <div class="rule">
+        <span>Click two slots to swap stations</span>
+        <span>Every station runs once per piece</span>
+        <span>Tags are the machine's memory</span>
+      </div>
+      <div class="line-wrap">
+        <div id="line" class="line" aria-label="Factory station order"></div>
+      </div>
+      <div class="controls">
+        <button id="run">Run hands-off batch</button>
+        <button id="reset">Reset scramble</button>
+        <span id="hint">Choose the order that lets each station find what it needs.</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>2 / Watch the run</h2>
+      <div class="machine" aria-label="Conveyor animation">
+        <div class="belt"></div>
+        <div id="piece" class="piece" style="left: 3%"></div>
+      </div>
+      <div class="meters">
+        <div class="meter"><div class="meter-label">Finished</div><div id="meter-finished" class="meter-value">0 / 3</div></div>
+        <div class="meter"><div class="meter-label">Jams</div><div id="meter-jams" class="meter-value">0</div></div>
+        <div class="meter"><div class="meter-label">Last tags</div><div id="meter-time" class="meter-value" style="font-size: 15px; padding-top: 5px;">RAW</div></div>
+      </div>
+      <div id="log" class="log" aria-live="polite"><span class="dim">[system] Three blanks loaded. The line is waiting for an order.</span></div>
+    </section>
+  </main>
+
+  <script>
+    const stationBook = {
+      stamp: { name: 'Stamp', id: 'STAMP', needs: ['raw'], gives: 'shell', color: '#d7a9e8' },
+      drill: { name: 'Drill', id: 'DRILL', needs: ['shell'], gives: 'hole', color: '#8cc8ed' },
+      coat: { name: 'Coat', id: 'COAT', needs: ['hole'], gives: 'wet', color: '#f1c96b' },
+      oven: { name: 'Oven', id: 'OVEN', needs: ['wet'], gives: 'dry', color: '#f48a85' },
+      pack: { name: 'Pack', id: 'PACK', needs: ['dry'], gives: 'finished', color: '#82e0b0' }
+    };
+
+    const scramble = ['oven', 'pack', 'drill', 'stamp', 'coat'];
+    let order = [...scramble];
+    let selectedSlot = null;
+    let running = false;
+    let finished = 0;
+    let jams = 0;
+    let runToken = 0;
+
+    const line = document.querySelector('#line');
+    const status = document.querySelector('#status');
+    const log = document.querySelector('#log');
+    const runButton = document.querySelector('#run');
+    const resetButton = document.querySelector('#reset');
+    const hint = document.querySelector('#hint');
+    const piece = document.querySelector('#piece');
+    const finishedMeter = document.querySelector('#meter-finished');
+    const jamsMeter = document.querySelector('#meter-jams');
+    const tagsMeter = document.querySelector('#meter-time');
+
+    function tagMarkup(tags) {
+      return [...tags].map(tag => '<span class="tag ' + tag + '">' + tag.toUpperCase() + '</span>').join('');
+    }
+
+    function renderLine() {
+      line.innerHTML = '';
+      order.forEach((id, index) => {
+        const station = stationBook[id];
+        const slot = document.createElement('button');
+        slot.className = 'slot';
+        slot.type = 'button';
+        slot.dataset.index = index;
+        slot.setAttribute('aria-label', 'Slot ' + (index + 1) + ': ' + station.name);
+        slot.innerHTML = '<div class="slot-number">SLOT 0' + (index + 1) + '</div>'
+          + '<div class="station-name">' + station.name + '</div>'
+          + '<div class="station-id" style="color:' + station.color + '">' + station.id + '</div>'
+          + '<div class="station-rule"><b>needs</b> ' + station.needs.map(value => value.toUpperCase()).join(' + ')
+          + ' <span class="arrow">→</span> <b>leaves</b> ' + station.gives.toUpperCase() + '</div>';
+        slot.addEventListener('click', () => chooseSlot(index));
+        line.appendChild(slot);
+      });
+      updateSelection();
+    }
+
+    function updateSelection() {
+      [...line.children].forEach((slot, index) => {
+        slot.classList.toggle('selected', index === selectedSlot);
+      });
+    }
+
+    function chooseSlot(index) {
+      if (running) return;
+      if (selectedSlot === null) {
+        selectedSlot = index;
+        hint.textContent = 'Now choose another slot to swap with SLOT 0' + (index + 1) + '.';
+      } else if (selectedSlot === index) {
+        selectedSlot = null;
+        hint.textContent = 'Choose the order that lets each station find what it needs.';
+      } else {
+        [order[selectedSlot], order[index]] = [order[index], order[selectedSlot]];
+        selectedSlot = null;
+        hint.textContent = 'Order changed. Run the batch when ready.';
+        status.textContent = 'Order edited';
+        renderLine();
+      }
+      updateSelection();
+    }
+
+    function writeLog(message, className) {
+      const row = document.createElement('div');
+      if (className) row.className = className;
+      row.innerHTML = message;
+      log.appendChild(row);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function wait(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function resetMeters() {
+      finished = 0;
+      jams = 0;
+      finishedMeter.textContent = '0 / 3';
+      jamsMeter.textContent = '0';
+      tagsMeter.innerHTML = '<span class="tag raw">RAW</span>';
+      [...line.children].forEach(slot => slot.classList.remove('active', 'failed', 'done'));
+      piece.className = 'piece';
+      piece.style.left = '3%';
+    }
+
+    async function runBatch() {
+      if (running) return;
+      running = true;
+      const token = ++runToken;
+      selectedSlot = null;
+      resetMeters();
+      log.innerHTML = '';
+      status.textContent = 'Running hands-off';
+      hint.textContent = 'Hands off: the line will stop at its first bad handoff.';
+      runButton.disabled = true;
+      resetButton.disabled = true;
+      [...line.children].forEach(slot => slot.disabled = true);
+
+      writeLog('[system] Batch started. Three raw blanks enter the conveyor.', 'note');
+      for (let batch = 1; batch <= 3; batch++) {
+        if (token !== runToken) return;
+        let tags = new Set(['raw']);
+        writeLog('[blank ' + batch + '] enters with <span class="tags">' + tagMarkup(tags) + '</span>', 'dim');
+        let jammed = false;
+        for (let i = 0; i < order.length; i++) {
+          const station = stationBook[order[i]];
+          [...line.children].forEach(slot => slot.classList.remove('active'));
+          line.children[i].classList.add('active');
+          piece.style.left = (7 + i * 21) + '%';
+          await wait(430);
+          if (token !== runToken) return;
+          const missing = station.needs.filter(need => !tags.has(need));
+          if (missing.length) {
+            jams++;
+            jamsMeter.textContent = String(jams);
+            line.children[i].classList.remove('active');
+            line.children[i].classList.add('failed');
+            piece.classList.add('jammed');
+            writeLog('[blank ' + batch + '] JAM at ' + station.id + ': needs <span class="tag">' + missing.join('</span> + <span class="tag">').toUpperCase() + '</span>; it has <span class="tags">' + tagMarkup(tags) + '</span>.', 'bad');
+            jammed = true;
+            break;
+          }
+          if (station.needs.includes('raw')) tags.delete('raw');
+          tags.add(station.gives);
+          tagsMeter.innerHTML = tagMarkup(tags);
+          writeLog('[blank ' + batch + '] ' + station.id + ' passes → <span class="tags">' + tagMarkup(tags) + '</span>');
+        }
+        if (jammed) {
+          writeLog('[system] Run stopped with evidence. Swap the handoff that failed, then retry.', 'note');
+          break;
+        }
+        finished++;
+        finishedMeter.textContent = finished + ' / 3';
+        line.children[line.children.length - 1].classList.add('done');
+        piece.className = 'piece finished';
+        piece.style.left = '96%';
+        writeLog('[blank ' + batch + '] FINISHED beacon exits the line.', 'good');
+        await wait(300);
+      }
+      if (finished === 3) {
+        status.textContent = 'Batch complete';
+        hint.textContent = 'All three beacons made it out. Reset to try the run again.';
+        writeLog('[system] Perfect run. The factory can now run hands-off.', 'good');
+      } else {
+        status.textContent = 'Line jammed';
+        hint.textContent = 'Use the first JAM line as your clue, swap two slots, and retry.';
+      }
+      running = false;
+      runButton.disabled = false;
+      resetButton.disabled = false;
+      [...line.children].forEach(slot => slot.disabled = false);
+    }
+
+    function resetScramble() {
+      if (running) return;
+      runToken++;
+      order = [...scramble];
+      selectedSlot = null;
+      resetMeters();
+      renderLine();
+      status.textContent = 'Awaiting order';
+      hint.textContent = 'Choose the order that lets each station find what it needs.';
+      log.innerHTML = '<span class="dim">[system] Scramble restored. Three blanks are ready.</span>';
+    }
+
+    runButton.addEventListener('click', runBatch);
+    resetButton.addEventListener('click', resetScramble);
+    renderLine();
+  </script>
+</body>
+</html>

@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shiftwater Bridge</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #eaf4f4;
+      --muted: #91abab;
+      --panel: #102528;
+      --panel-2: #173337;
+      --line: #2b5052;
+      --dry: #56d6b2;
+      --tilt: #f2bd66;
+      --sunk: #38545a;
+      --accent: #ecf58f;
+      --danger: #ff867c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 20% 0%, #1b4142 0, transparent 35%),
+        #091719;
+      color: var(--ink);
+      font: 16px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main {
+      width: min(780px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 42px;
+    }
+
+    header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 18px;
+    }
+
+    h1, h2, p { margin: 0; }
+    h1 { letter-spacing: .08em; font-size: clamp(25px, 5vw, 38px); text-transform: uppercase; }
+    h1 span { color: var(--accent); }
+    .eyebrow { color: var(--muted); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; margin-bottom: 5px; }
+    .turn { color: var(--muted); text-align: right; white-space: nowrap; font-size: 14px; }
+    .turn strong { display: block; color: var(--ink); font-size: 22px; }
+
+    .brief, .game-shell, .notes {
+      border: 1px solid var(--line);
+      background: rgba(16, 37, 40, .92);
+      border-radius: 16px;
+    }
+
+    .brief { padding: 16px 18px; margin-bottom: 18px; color: #d9e8e6; }
+    .brief b { color: var(--accent); }
+
+    .game-shell { padding: 18px; }
+    .game-layout { display: grid; grid-template-columns: minmax(260px, 1fr) 220px; gap: 20px; align-items: start; }
+
+    .board {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 7px;
+      width: min(100%, 430px);
+      margin: 0 auto;
+      aspect-ratio: 1;
+    }
+
+    .tile {
+      position: relative;
+      min-width: 0;
+      padding: 0;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      color: #06201e;
+      cursor: default;
+      font: 700 11px/1 system-ui, sans-serif;
+      letter-spacing: .04em;
+      transition: transform .14s ease, background .14s ease, border-color .14s ease;
+    }
+
+    .tile.dry { background: var(--dry); }
+    .tile.tilt { background: var(--tilt); }
+    .tile.sunk { background: var(--sunk); color: #8ba4a5; }
+    .tile.reachable { cursor: pointer; border-color: #ffffff; box-shadow: 0 0 0 2px rgba(255,255,255,.12); }
+    .tile.reachable:hover, .tile.reachable:focus-visible { transform: translateY(-3px); outline: none; }
+    .tile.player { box-shadow: inset 0 0 0 3px var(--accent), 0 0 0 2px var(--accent); }
+    .tile.beacon::after { content: "✦"; position: absolute; right: 7px; top: 4px; color: #102528; font-size: 18px; }
+    .tile.player.beacon::after { color: var(--accent); }
+    .tile.bump { animation: bump .3s ease; }
+    @keyframes bump { 50% { transform: scale(.9) rotate(-2deg); } }
+
+    .side { display: grid; gap: 16px; }
+    .side h2 { color: var(--muted); font-size: 12px; letter-spacing: .16em; text-transform: uppercase; margin-bottom: 8px; }
+    .legend { display: grid; gap: 7px; color: #c9dbd9; font-size: 13px; }
+    .legend-row { display: flex; gap: 9px; align-items: center; }
+    .swatch { width: 14px; height: 14px; border-radius: 4px; flex: 0 0 auto; }
+    .swatch.dry { background: var(--dry); }
+    .swatch.tilt { background: var(--tilt); }
+    .swatch.sunk { background: var(--sunk); border: 1px solid #688487; }
+
+    .log {
+      min-height: 98px;
+      padding: 11px 12px;
+      border-left: 3px solid var(--dry);
+      background: #0c2022;
+      color: #c8dcda;
+      font-size: 13px;
+    }
+    .log.bad { border-left-color: var(--danger); }
+    .log.good { border-left-color: var(--accent); }
+    .log strong { display: block; color: var(--ink); margin-bottom: 4px; }
+
+    .controls { display: grid; grid-template-columns: repeat(3, 42px); gap: 6px; justify-content: center; margin-top: 18px; }
+    .controls button, .retry {
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--panel-2);
+      color: var(--ink);
+      min-height: 40px;
+      font-size: 18px;
+      cursor: pointer;
+    }
+    .controls button:hover, .controls button:focus-visible, .retry:hover, .retry:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+    .controls button:nth-child(1) { grid-column: 2; }
+    .controls button:nth-child(2) { grid-column: 1; grid-row: 2; }
+    .controls button:nth-child(3) { grid-column: 2; grid-row: 2; }
+    .controls button:nth-child(4) { grid-column: 3; grid-row: 2; }
+    .controls button:disabled { opacity: .45; cursor: not-allowed; }
+
+    .program { padding-top: 14px; border-top: 1px solid var(--line); }
+    .program label { display: block; margin-bottom: 6px; color: #c9dbd9; font-size: 13px; }
+    .program textarea {
+      display: block;
+      width: 100%;
+      min-height: 54px;
+      resize: vertical;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #0c2022;
+      color: var(--accent);
+      font: 700 16px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: .12em;
+    }
+    .program textarea:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px rgba(236,245,143,.12); }
+    .program textarea:disabled { opacity: .55; }
+    .program-help { margin: 6px 0 10px; color: var(--muted); font-size: 12px; }
+    .run {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--accent);
+      border-radius: 9px;
+      background: var(--accent);
+      color: #102528;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .run:hover, .run:focus-visible { background: #f7ffb8; outline: none; }
+    .run:disabled { opacity: .55; cursor: wait; }
+
+    .retry { width: 100%; min-height: 42px; margin-top: 4px; font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .notes { margin-top: 18px; padding: 12px 16px; color: var(--muted); font-size: 13px; }
+    .notes kbd { padding: 2px 6px; border: 1px solid var(--line); border-radius: 5px; color: var(--ink); background: var(--panel-2); }
+
+    @media (max-width: 620px) {
+      main { padding-top: 22px; }
+      .game-layout { grid-template-columns: 1fr; }
+      .side { grid-template-columns: 1fr 1fr; }
+      .side .action { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">Batch 0 / field test</p>
+        <h1>Shift<span>water</span> Bridge</h1>
+      </div>
+      <p class="turn">PULSE <strong id="turn">00</strong></p>
+    </header>
+
+    <section class="brief">
+      Reach the <b>beacon ✦</b>. Every accepted move sends one pulse through the landscape:
+      <b>DRY → TILTING → SUNK → DRY</b>. Step onto a tilting tile and it gives way after the pulse.
+    </section>
+
+    <section class="game-shell" aria-label="Shiftwater Bridge game">
+      <div class="game-layout">
+        <div>
+          <div id="board" class="board" role="grid" aria-label="Five by five bridge landscape"></div>
+          <div class="controls" aria-label="Move controls">
+            <button type="button" data-move="up" aria-label="Move up">↑</button>
+            <button type="button" data-move="left" aria-label="Move left">←</button>
+            <button type="button" data-move="down" aria-label="Move down">↓</button>
+            <button type="button" data-move="right" aria-label="Move right">→</button>
+          </div>
+        </div>
+
+        <aside class="side">
+          <div>
+            <h2>Read the water</h2>
+            <div class="legend">
+              <div class="legend-row"><span class="swatch dry"></span><span><b>DRY</b> — safe landing</span></div>
+              <div class="legend-row"><span class="swatch tilt"></span><span><b>TILTING</b> — collapses now</span></div>
+              <div class="legend-row"><span class="swatch sunk"></span><span><b>SUNK</b> — wait for it</span></div>
+            </div>
+          </div>
+          <div class="program">
+            <h2>Plan / Run</h2>
+            <label for="plan">Movement instructions</label>
+            <textarea id="plan" rows="2" spellcheck="false" aria-describedby="plan-help">U U R U R U R R</textarea>
+            <p id="plan-help" class="program-help">Edit with U, D, L, R. Spaces are ignored.</p>
+            <button id="run" class="run" type="button">Run</button>
+          </div>
+          <div>
+            <h2>Last signal</h2>
+            <div id="log" class="log" aria-live="polite"><strong>Choose a neighboring tile.</strong> White outlines mark the only reachable tiles.</div>
+          </div>
+          <div class="action">
+            <button id="retry" class="retry" type="button">Retry crossing</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <p class="notes">Edit the movement plan and press <b>Run</b>, or click a white-outlined tile / use <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>. The bridge remembers every pulse.</p>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const size = 5;
+      const start = { r: 4, c: 0 };
+      const beacon = { r: 0, c: 4 };
+      // Base phases are the disposable puzzle's hidden route skeleton.
+      const base = [
+        [1, 2, 1, 0, 2],
+        [2, 0, 2, 1, 0],
+        [2, 1, 0, 2, 1],
+        [0, 1, 2, 0, 1],
+        [0, 1, 2, 0, 1]
+      ];
+      const directions = {
+        up: { r: -1, c: 0 },
+        down: { r: 1, c: 0 },
+        left: { r: 0, c: -1 },
+        right: { r: 0, c: 1 }
+      };
+
+      const board = document.getElementById("board");
+      const turnEl = document.getElementById("turn");
+      const logEl = document.getElementById("log");
+      const planEl = document.getElementById("plan");
+      const runEl = document.getElementById("run");
+      const retryEl = document.getElementById("retry");
+      const moveButtons = [...document.querySelectorAll("[data-move]")];
+      let player;
+      let turn;
+      let ended;
+      let running = false;
+      let runTimer = null;
+      let bumpKey = "";
+
+      function key(r, c) { return `${r},${c}`; }
+      function same(a, b) { return a.r === b.r && a.c === b.c; }
+      function inside(r, c) { return r >= 0 && r < size && c >= 0 && c < size; }
+      function stateAt(r, c) { return (base[r][c] + turn) % 3; }
+      function stateName(state) { return ["DRY", "TILTING", "SUNK"][state]; }
+      function isNeighbor(r, c) { return Math.abs(player.r - r) + Math.abs(player.c - c) === 1; }
+
+      function setLog(title, message, mood) {
+        logEl.className = `log ${mood || ""}`;
+        logEl.innerHTML = `<strong>${title}</strong>${message}`;
+      }
+
+      function stopRun() {
+        if (runTimer !== null) window.clearTimeout(runTimer);
+        runTimer = null;
+        running = false;
+      }
+
+      function syncControls() {
+        moveButtons.forEach((button) => { button.disabled = ended || running; });
+        planEl.disabled = running;
+        runEl.disabled = running;
+      }
+
+      function render() {
+        turnEl.textContent = String(turn).padStart(2, "0");
+        board.innerHTML = "";
+        for (let r = 0; r < size; r += 1) {
+          for (let c = 0; c < size; c += 1) {
+            const state = stateAt(r, c);
+            const tile = document.createElement("button");
+            const tileKey = key(r, c);
+            tile.type = "button";
+            tile.className = `tile ${["dry", "tilt", "sunk"][state]}`;
+            tile.setAttribute("role", "gridcell");
+            tile.setAttribute("aria-label", `${stateName(state)}, row ${r + 1}, column ${c + 1}`);
+            tile.textContent = stateName(state);
+            if (same(player, { r, c })) {
+              tile.classList.add("player");
+              tile.textContent = "YOU";
+            }
+            if (same(beacon, { r, c })) tile.classList.add("beacon");
+            if (!ended && isNeighbor(r, c)) {
+              tile.classList.add("reachable");
+              tile.addEventListener("click", () => attempt(r - player.r, c - player.c));
+            }
+            if (tileKey === bumpKey) tile.classList.add("bump");
+            board.appendChild(tile);
+          }
+        }
+        syncControls();
+      }
+
+      function finish(title, message, mood) {
+        stopRun();
+        ended = true;
+        setLog(title, message, mood);
+        render();
+      }
+
+      function attempt(dr, dc, automated = false) {
+        if (ended || (running && !automated)) return false;
+        const next = { r: player.r + dr, c: player.c + dc };
+        if (!inside(next.r, next.c)) {
+          setLog("No bridge there.", "That edge is open water. Pick one of the four neighboring tiles.", "bad");
+          return false;
+        }
+        const landingState = stateAt(next.r, next.c);
+        bumpKey = key(next.r, next.c);
+        player = next;
+        turn += 1;
+        if (same(player, beacon) && landingState === 0) {
+          finish("Beacon reached.", `You read the dry landing at pulse ${turn - 1} and crossed before the next shift.`, "good");
+          return false;
+        }
+        if (landingState === 1) {
+          finish("The tile gave way.", `It was TILTING before the move, then sank on pulse ${turn}. That is useful evidence: land only on DRY.`, "bad");
+          return false;
+        }
+        if (landingState === 2) {
+          finish("The tile was already gone.", `You tried to land on SUNK water at row ${next.r + 1}, column ${next.c + 1}. The pulse is not the only danger; inspect the tile before moving.`, "bad");
+          return false;
+        }
+        setLog("Pulse sent.", `You landed DRY. The whole grid advanced one phase; now find the next DRY neighbor.`, "");
+        render();
+        return true;
+      }
+
+      function runPlan() {
+        if (running) return;
+        const plan = planEl.value.toUpperCase().replace(/\s+/g, "");
+        const invalid = plan.match(/[^UDLR]/);
+        if (!plan) {
+          setLog("Plan is empty.", "Add a short U, D, L, R movement plan, then press Run.", "bad");
+          return;
+        }
+        if (invalid) {
+          setLog("Plan needs a correction.", `“${invalid[0]}” is not a movement instruction. Use only U, D, L, or R.`, "bad");
+          return;
+        }
+
+        reset();
+        running = true;
+        let index = 0;
+        const moves = { U: "up", D: "down", L: "left", R: "right" };
+        setLog("Running plan.", `Step 1 of ${plan.length} is queued against the starting bridge.`, "");
+        render();
+
+        const executeNext = () => {
+          runTimer = null;
+          if (!running) return;
+          if (index >= plan.length) {
+            stopRun();
+            setLog("Plan complete.", "The instructions ended before the beacon. Edit the plan and Run it again.", "");
+            render();
+            return;
+          }
+          const move = directions[moves[plan[index]]];
+          index += 1;
+          const advanced = attempt(move.r, move.c, true);
+          if (!advanced || ended) {
+            stopRun();
+            render();
+            return;
+          }
+          setLog("Running plan.", `Step ${index} of ${plan.length} landed after pulse ${turn}.`, "");
+          render();
+          runTimer = window.setTimeout(executeNext, 380);
+        };
+
+        runTimer = window.setTimeout(executeNext, 350);
+      }
+
+      function reset() {
+        stopRun();
+        player = { ...start };
+        turn = 0;
+        ended = false;
+        bumpKey = "";
+        setLog("Choose a neighboring tile.", "White outlines mark the only reachable tiles. The same landscape is ready for another read.", "");
+        render();
+      }
+
+      moveButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const move = directions[button.dataset.move];
+          attempt(move.r, move.c);
+        });
+      });
+      runEl.addEventListener("click", runPlan);
+      retryEl.addEventListener("click", reset);
+      document.addEventListener("keydown", (event) => {
+        const moves = { ArrowUp: "up", w: "up", W: "up", ArrowDown: "down", s: "down", S: "down", ArrowLeft: "left", a: "left", A: "left", ArrowRight: "right", d: "right", D: "right" };
+        const direction = moves[event.key];
+        if (!direction) return;
+        event.preventDefault();
+        const move = directions[direction];
+        attempt(move.r, move.c);
+      });
+
+      reset();
+    })();
+  </script>
+</body>
+</html>

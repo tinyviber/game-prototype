@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Echo Corridor</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f5f1e8;
+      --muted: #a8a39a;
+      --line: #3a3935;
+      --panel: #171815;
+      --panel-2: #20221d;
+      --gold: #f3c969;
+      --green: #8bd4a8;
+      --red: #f08b82;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #0d0e0c;
+      color: var(--ink);
+      font: 16px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .shell { width: min(720px, calc(100% - 32px)); padding: 24px 0; }
+
+    .topbar {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: .1em;
+    }
+
+    .topbar button { padding: 6px 10px; font-size: 12px; }
+
+    .brand { color: var(--gold); }
+
+    .card {
+      min-height: 530px;
+      padding: clamp(22px, 5vw, 42px);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: linear-gradient(145deg, #1a1b17, var(--panel));
+      box-shadow: 0 18px 50px #0008;
+    }
+
+    h1, h2, p { margin-top: 0; }
+    h1 { max-width: 560px; margin-bottom: 16px; font-size: clamp(28px, 6vw, 46px); line-height: 1.05; }
+    h2 { margin-bottom: 8px; font-size: 24px; }
+    p { color: var(--muted); }
+    .lead { max-width: 570px; font-size: 18px; }
+    .small { font-size: 13px; }
+
+    button {
+      border: 1px solid #6e633f;
+      border-radius: 6px;
+      padding: 11px 15px;
+      color: var(--ink);
+      background: #2a291e;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button:hover:not(:disabled), button:focus-visible:not(:disabled) {
+      border-color: var(--gold);
+      outline: 2px solid #f3c96933;
+      outline-offset: 2px;
+    }
+
+    button:disabled { cursor: not-allowed; opacity: .42; }
+    .primary { color: #1d1b12; background: var(--gold); border-color: var(--gold); font-weight: 700; }
+    .wide { width: 100%; }
+
+    .rule {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin: 28px 0;
+    }
+
+    .rule div {
+      min-height: 94px;
+      padding: 13px;
+      border: 1px solid var(--line);
+      background: #11120f;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .rule b { display: block; margin-bottom: 8px; color: var(--gold); font-size: 11px; letter-spacing: .08em; }
+
+    .program {
+      margin: 26px 0 18px;
+      border: 1px solid #4e4a39;
+      border-radius: 8px;
+      background: #10110e;
+    }
+
+    .program-head, .program-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 13px; }
+    .program-head { border-bottom: 1px solid var(--line); color: var(--gold); font-size: 11px; letter-spacing: .1em; }
+    .program-foot { border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    .program textarea {
+      display: block;
+      width: 100%;
+      min-height: 106px;
+      padding: 14px;
+      border: 0;
+      resize: vertical;
+      outline: 0;
+      color: var(--green);
+      background: #0b0c0a;
+      font: 14px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .program textarea:focus { box-shadow: inset 0 0 0 1px var(--gold); }
+    .program-error { min-height: 0; padding: 0 13px 10px; color: var(--red); font-size: 12px; }
+    .run-log { margin-top: 8px; color: var(--green); font-size: 12px; }
+
+    .room-head { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+    .room-head h2 { margin-bottom: 0; }
+    .room-number { color: var(--gold); font-size: 12px; letter-spacing: .1em; }
+
+    .rail { display: flex; gap: 6px; margin: 0 0 24px; }
+    .rail i { display: block; height: 5px; flex: 1; border-radius: 20px; background: #363631; }
+    .rail i.done { background: var(--green); }
+    .rail i.current { background: var(--gold); }
+
+    .flashbox {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 200px;
+      overflow: hidden;
+      border: 1px solid #5d563d;
+      border-radius: 8px;
+      background: radial-gradient(circle, #393521 0%, #1c1c16 66%);
+      transition: background .5s, border-color .5s;
+    }
+
+    .flashbox.faded { border-color: var(--line); background: #11120f; }
+    .flash-label { position: absolute; top: 14px; color: var(--gold); font-size: 11px; letter-spacing: .12em; }
+    .room-glyphs { display: flex; gap: clamp(12px, 4vw, 30px); font-size: clamp(36px, 10vw, 64px); transition: opacity .5s, filter .5s; }
+    .faded .room-glyphs { opacity: 0; filter: blur(8px); }
+    .flash-state { position: absolute; bottom: 12px; color: var(--muted); font-size: 12px; }
+
+    .pickbox { margin-top: 22px; }
+    .pickbox.is-hidden { display: none; }
+    .pickbox p { margin-bottom: 12px; }
+    .palette { display: flex; flex-wrap: wrap; gap: 8px; }
+    .glyph-button { min-width: 48px; padding: 8px 12px; font-size: 24px; }
+    .glyph-button.selected { color: #17150e; border-color: var(--gold); background: var(--gold); }
+    .carry-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 18px; }
+    .carry-count { color: var(--muted); font-size: 12px; }
+
+    .memory {
+      min-height: 42px;
+      margin: 20px 0 0;
+      padding: 10px 12px;
+      border: 1px dashed #3d493e;
+      color: var(--green);
+      font-size: 13px;
+    }
+
+    .memory span { color: var(--muted); }
+
+    .lock-wrap { max-width: 560px; margin: 0 auto; text-align: center; }
+    .tumblers { display: flex; justify-content: center; gap: 12px; margin: 30px 0 18px; }
+    .tumbler { width: 92px; height: 92px; border-color: #58574d; background: #10110e; color: var(--gold); font-size: 42px; }
+    .tumbler.active { border-color: var(--gold); box-shadow: 0 0 0 3px #f3c96922; }
+    .tumbler.filled { border-color: var(--green); color: var(--green); }
+    .lock-wrap .palette { justify-content: center; }
+    .lock-actions { display: flex; justify-content: center; gap: 8px; margin-top: 20px; }
+    .feedback { margin-top: 22px; padding: 15px; border: 1px solid var(--line); background: #11120f; text-align: left; }
+    .feedback.good { border-color: #557962; color: var(--green); }
+    .feedback.bad { border-color: #754743; color: var(--red); }
+    .trace { display: grid; grid-template-columns: 1fr repeat(4, auto); gap: 6px 12px; margin-top: 12px; color: var(--muted); font-size: 12px; }
+    .trace .yes { color: var(--green); }
+    .trace .no { color: var(--red); }
+    .trace-head { color: var(--gold); }
+
+    @media (max-width: 520px) {
+      .rule { grid-template-columns: 1fr; }
+      .rule div { min-height: 0; }
+      .carry-row { align-items: stretch; flex-direction: column; }
+      .carry-row button { width: 100%; }
+      .trace { grid-template-columns: 1fr repeat(4, min-content); gap: 5px 7px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">ECHO CORRIDOR</div>
+      <div id="progress">BRIEFING</div>
+      <button id="retry" type="button" data-action="retry" disabled>↻ Retry</button>
+    </header>
+    <section id="game" class="card" aria-live="polite"></section>
+  </main>
+
+  <script>
+    const rooms = [
+      { name: "Room One", marks: ["▲", "☾", "◆", "✚", "●"] },
+      { name: "Room Two", marks: ["⬟", "◆", "☾", "✦", "▲"] },
+      { name: "Room Three", marks: ["✚", "☾", "●", "◆", "⬟"] },
+      { name: "Room Four", marks: ["◆", "◇", "☾", "✦", "●"] }
+    ];
+    const palette = ["▲", "◆", "●", "✚", "☾", "⬟", "◇", "✦"];
+    const game = document.querySelector("#game");
+    const progress = document.querySelector("#progress");
+    let flashTimer;
+    let runTimer;
+    const defaultProgram = `MEMORY = KEEP 2
+CHECK = IN EVERY ROOM
+ORDER = FIRST SEEN`;
+    let state = { room: 0, picks: [], carried: [], lock: [null, null], activeSlot: 0, attempt: 0, started: false, rule: { memoryCount: 2, check: "EVERY_ROOM", order: "FIRST_SEEN" } };
+
+    const roomRail = current => rooms.map((_, i) => `<i class="${i < current ? "done" : i === current ? "current" : ""}"></i>`).join("");
+    const markButtons = (chosen, action) => palette.map(mark => `<button class="glyph-button ${chosen.includes(mark) ? "selected" : ""}" data-mark="${mark}" data-action="${action}" aria-label="Mark ${mark}">${mark}</button>`).join("");
+
+    function parseProgram(source) {
+      const rule = { memoryCount: 2, check: "EVERY_ROOM", order: "FIRST_SEEN" };
+      const lines = source.split("\n").map(line => line.trim()).filter(Boolean);
+      const seen = new Set();
+      for (const [index, line] of lines.entries()) {
+        const match = line.match(/^([A-Z ]+)\s*=\s*(.+)$/);
+        if (!match) return { error: `Line ${index + 1}: cannot read "${line}". Use KEY = VALUE.` };
+        const key = match[1].trim();
+        const value = match[2].trim();
+        if (seen.has(key)) return { error: `Line ${index + 1}: ${key} is specified more than once.` };
+        seen.add(key);
+        if (key === "MEMORY") {
+          const keep = value.match(/^KEEP ([123])$/);
+          if (!keep) return { error: `Line ${index + 1}: MEMORY must be KEEP 1, KEEP 2, or KEEP 3.` };
+          rule.memoryCount = Number(keep[1]);
+        } else if (key === "CHECK") {
+          if (value !== "IN EVERY ROOM") return { error: `Line ${index + 1}: CHECK must be IN EVERY ROOM.` };
+          rule.check = "EVERY_ROOM";
+        } else if (key === "ORDER") {
+          if (value === "FIRST SEEN") rule.order = "FIRST_SEEN";
+          else if (value === "LAST SEEN") rule.order = "LAST_SEEN";
+          else return { error: `Line ${index + 1}: ORDER must be FIRST SEEN or LAST SEEN.` };
+        } else return { error: `Line ${index + 1}: unknown instruction "${key}".` };
+      }
+      for (const key of ["MEMORY", "CHECK", "ORDER"]) {
+        if (!seen.has(key)) return { error: `Missing ${key} instruction. Run needs MEMORY, CHECK, and ORDER.` };
+      }
+      if (lines.length !== 3) return { error: "Run needs exactly one MEMORY, one CHECK, and one ORDER instruction." };
+      return { rule };
+    }
+
+    function briefing() {
+      clearTimeout(flashTimer);
+      progress.textContent = "BRIEFING";
+      game.innerHTML = `
+        <h1>The corridor forgets.<br>Can you remember?</h1>
+        <p class="lead">Four rooms will show you a handful of marks, then go dark. The final lock accepts the two marks that appeared in every room, in the order you first met them.</p>
+        <div class="rule">
+          <div><b>1 / WATCH</b>Each room flashes once. Keep the whole strip in your head.</div>
+          <div><b>2 / CARRY</b>After it fades, choose two marks to carry onward.</div>
+          <div><b>3 / UNLOCK</b>At the end, arrange the marks that survived every room.</div>
+        </div>
+        <p class="small">A wrong lock attempt leaves a trace of where your memories vanished. The corridor can be run again.</p>
+        <div class="program">
+          <div class="program-head"><span>EDITABLE RUN CARD</span><span>3 INSTRUCTIONS</span></div>
+          <textarea id="program-input" spellcheck="false" aria-label="Editable corridor rule">${defaultProgram}</textarea>
+          <div id="program-error" class="program-error"></div>
+          <div class="program-foot"><span>Try MEMORY = KEEP 1/2/3 or ORDER = LAST SEEN.</span><button class="primary" data-action="run">▶ Run corridor</button></div>
+        </div>
+        <div id="run-log" class="run-log">● Ready. Nothing has run yet.</div>
+      `;
+    }
+
+    function runCorridor() {
+      const result = parseProgram(document.querySelector("#program-input").value);
+      const error = document.querySelector("#program-error");
+      if (result.error) {
+        error.textContent = `Rule error: ${result.error}`;
+        return;
+      }
+      state = { room: 0, picks: [], carried: [], lock: [null, null], activeSlot: 0, attempt: 0, started: true, rule: result.rule };
+      const runButton = document.querySelector('[data-action="run"]');
+      document.querySelector("#retry").disabled = false;
+      runButton.disabled = true;
+      runButton.textContent = "Running…";
+      document.querySelector("#run-log").textContent = `▶ Executing memory rule: keep ${result.rule.memoryCount} / check every room / order ${result.rule.order === "FIRST_SEEN" ? "first seen" : "last seen"}...`;
+      progress.textContent = "RUNNING...";
+      runTimer = setTimeout(showRoom, 450);
+    }
+
+    function showRoom() {
+      clearTimeout(flashTimer);
+      const room = rooms[state.room];
+      state.picks = [];
+      progress.textContent = `ROOM ${state.room + 1} / ${rooms.length}`;
+      game.innerHTML = `
+        <div class="room-head">
+          <div><div class="room-number">CHAMBER ${String(state.room + 1).padStart(2, "0")}</div><h2>${room.name}</h2></div>
+          <div class="small">${state.carried.length ? `${state.carried.length} room${state.carried.length === 1 ? "" : "s"} crossed` : "no marks carried"}</div>
+        </div>
+        <div class="rail">${roomRail(state.room)}</div>
+        <div id="flashbox" class="flashbox">
+          <div class="flash-label">LOOK CLOSELY</div>
+          <div class="room-glyphs">${room.marks.map(mark => `<span>${mark}</span>`).join("")}</div>
+          <div id="flash-state" class="flash-state">The wall is speaking...</div>
+        </div>
+        <div id="pickbox" class="pickbox is-hidden">
+          <p>Room dark. Pick the <b>${state.rule.memoryCount} mark${state.rule.memoryCount === 1 ? "" : "s"}</b> you will carry through this door.</p>
+          <div id="palette" class="palette">${markButtons([], "pick")}</div>
+          <div class="carry-row">
+            <div id="carry-count" class="carry-count">0 / ${state.rule.memoryCount} carried</div>
+            <button id="carry" class="primary" data-action="carry" disabled>Seal this room</button>
+          </div>
+        </div>
+        <div class="memory"><span>Slate:</span> ${state.carried.length ? state.carried.map((pair, i) => `room ${i + 1} [${pair.join(" ")}]`).join("  ·  ") : "empty"}</div>
+      `;
+      flashTimer = setTimeout(() => {
+        document.querySelector("#flashbox").classList.add("faded");
+        document.querySelector("#flash-state").textContent = "Room dark. Choose from the marks below.";
+        document.querySelector("#pickbox").classList.remove("is-hidden");
+      }, 2800);
+    }
+
+    function pickMark(button) {
+      const mark = button.dataset.mark;
+      if (state.picks.includes(mark)) state.picks = state.picks.filter(item => item !== mark);
+      else if (state.picks.length < state.rule.memoryCount) state.picks.push(mark);
+      document.querySelectorAll('[data-action="pick"]').forEach(item => item.classList.toggle("selected", state.picks.includes(item.dataset.mark)));
+      document.querySelector("#carry-count").textContent = `${state.picks.length} / ${state.rule.memoryCount} carried`;
+      document.querySelector("#carry").disabled = state.picks.length !== state.rule.memoryCount;
+    }
+
+    function carry() {
+      state.carried.push([...state.picks]);
+      if (state.room < rooms.length - 1) {
+        state.room += 1;
+        showRoom();
+      } else showLock();
+    }
+
+    function survivors() {
+      const checkedRooms = state.rule.check === "EVERY_ROOM" ? rooms : [];
+      const survived = palette.filter(mark => checkedRooms.length === rooms.length && checkedRooms.every(room => room.marks.includes(mark)));
+      const sighting = mark => {
+        const roomIndex = state.rule.order === "FIRST_SEEN"
+          ? rooms.findIndex(room => room.marks.includes(mark))
+          : rooms.reduce((last, room, index) => room.marks.includes(mark) ? index : last, -1);
+        return roomIndex * palette.length + rooms[roomIndex].marks.indexOf(mark);
+      };
+      return survived.sort((a, b) => sighting(a) - sighting(b));
+    }
+
+    function showLock() {
+      clearTimeout(flashTimer);
+      state.lock = [null, null];
+      state.activeSlot = 0;
+      progress.textContent = "FINAL LOCK";
+      game.innerHTML = `
+        <div class="lock-wrap">
+          <div class="room-number">THE LAST DOOR</div>
+          <h2>What survived?</h2>
+          <p>Enter the two marks that appeared in <b>every</b> room. Use the order in which you <b>${state.rule.order === "FIRST_SEEN" ? "first" : "last"} saw them</b>.</p>
+          <p class="small">Active rule: keep ${state.rule.memoryCount}; check every room; order ${state.rule.order === "FIRST_SEEN" ? "first" : "last"} seen.</p>
+          <div class="tumblers">
+            <button class="tumbler active" data-action="slot" data-slot="0" aria-label="First lock tumbler">?</button>
+            <button class="tumbler" data-action="slot" data-slot="1" aria-label="Second lock tumbler">?</button>
+          </div>
+          <p class="small">Choose a tumbler, then choose a mark.</p>
+          <div class="palette">${markButtons([], "lock-pick")}</div>
+          <div class="lock-actions"><button class="primary" data-action="unlock">Turn the lock</button></div>
+          <div id="lock-feedback"></div>
+        </div>
+      `;
+    }
+
+    function setLockMark(button) {
+      const mark = button.dataset.mark;
+      const other = state.lock[1 - state.activeSlot];
+      if (mark === other) return;
+      state.lock[state.activeSlot] = mark;
+      const next = state.lock.findIndex(item => !item);
+      state.activeSlot = next === -1 ? state.activeSlot : next;
+      document.querySelectorAll(".tumbler").forEach((item, i) => {
+        item.textContent = state.lock[i] || "?";
+        item.classList.toggle("active", i === state.activeSlot);
+        item.classList.toggle("filled", Boolean(state.lock[i]));
+      });
+    }
+
+    function trace(mark) {
+      return rooms.map(room => `<span class="${room.marks.includes(mark) ? "yes" : "no"}">${room.marks.includes(mark) ? "✓" : "×"}</span>`).join("");
+    }
+
+    function unlock() {
+      const feedback = document.querySelector("#lock-feedback");
+      if (state.lock.some(item => !item)) {
+        feedback.innerHTML = `<div class="feedback bad">Both tumblers need a mark before the lock can turn.</div>`;
+        return;
+      }
+      const answer = survivors();
+      if (state.lock[0] === answer[0] && state.lock[1] === answer[1]) {
+        feedback.innerHTML = `<div class="feedback good"><b>The lock opens.</b><br>The corridor kept the echo of ${answer.join(" then ")}. A warm passage appears beyond the door.</div>`;
+        document.querySelector("[data-action=unlock]").disabled = true;
+        return;
+      }
+      state.attempt += 1;
+      const rows = state.lock.map((mark, i) => `<div>${i + 1}. ${mark}</div>${trace(mark)}`).join("");
+      const orderHint = state.lock[0] === answer[1] && state.lock[1] === answer[0] ? `Both marks lasted, but their ${state.rule.order === "FIRST_SEEN" ? "first-sighting" : "last-sighting"} order is reversed.` : "A × shows the room where that memory vanished.";
+      feedback.innerHTML = `
+        <div class="feedback bad"><b>The lock resists.</b> ${orderHint}
+          <div class="trace"><span class="trace-head">memory</span><span class="trace-head">R1</span><span class="trace-head">R2</span><span class="trace-head">R3</span><span class="trace-head">R4</span>${rows}</div>
+          <div style="margin-top:14px"><button data-action="retry">Re-run the corridor</button></div>
+        </div>
+      `;
+    }
+
+    function retryCorridor() {
+      if (!state.started) return;
+      clearTimeout(flashTimer);
+      clearTimeout(runTimer);
+      state.room = 0;
+      state.picks = [];
+      state.carried = [];
+      state.lock = [null, null];
+      state.activeSlot = 0;
+      showRoom();
+    }
+
+    document.querySelector("#retry").addEventListener("click", retryCorridor);
+
+    game.addEventListener("click", event => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      const action = button.dataset.action;
+      if (action === "run") runCorridor();
+      if (action === "pick") pickMark(button);
+      if (action === "carry") carry();
+      if (action === "lock-pick") setLockMark(button);
+      if (action === "slot") { state.activeSlot = Number(button.dataset.slot); document.querySelectorAll(".tumbler").forEach((item, i) => item.classList.toggle("active", i === state.activeSlot)); }
+      if (action === "unlock") unlock();
+      if (action === "retry") retryCorridor();
+    });
+
+    briefing();
+  </script>
+</body>
+</html>

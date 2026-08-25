@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Property Exchange</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #edf3f7;
+      --muted: #94a5af;
+      --panel: #172129;
+      --panel-2: #1d2b34;
+      --line: #35505c;
+      --accent: #8de7cf;
+      --danger: #ff927d;
+      --board-h: 520px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 20% 0%, #21343d 0, transparent 32%),
+        #0e151a;
+      color: var(--ink);
+      font: 15px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    button { font: inherit; }
+
+    .shell {
+      width: min(1120px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 26px 0 34px;
+    }
+
+    .topline {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: flex-start;
+      margin-bottom: 18px;
+    }
+
+    .eyebrow {
+      color: var(--accent);
+      font-size: 11px;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    h1 {
+      font-size: clamp(25px, 4vw, 42px);
+      letter-spacing: -.06em;
+      line-height: 1;
+      margin: 0 0 11px;
+    }
+
+    .lede {
+      color: var(--muted);
+      margin: 0;
+      max-width: 630px;
+    }
+
+    .counter {
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 12px;
+      color: var(--accent);
+      white-space: nowrap;
+      background: #132027;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      border: 1px solid var(--line);
+      background: rgba(23, 33, 41, .86);
+      border-radius: 12px;
+      padding: 11px 13px;
+      margin-bottom: 12px;
+    }
+
+    .controls-label { color: var(--muted); margin-right: 2px; }
+
+    .property-button, .reset-button {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--ink);
+      background: #20313a;
+      cursor: pointer;
+      padding: 7px 11px;
+      transition: background .15s, border-color .15s, transform .15s;
+    }
+
+    .property-button:hover, .reset-button:hover { border-color: var(--accent); }
+    .property-button:active, .reset-button:active { transform: translateY(1px); }
+
+    .property-button.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #10201e;
+    }
+
+    .reset-button { margin-left: auto; color: #d3e0e5; }
+
+    .rule {
+      color: var(--muted);
+      font-size: 12px;
+      margin-left: auto;
+    }
+
+    .program {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 9px 12px;
+      align-items: start;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 11px 13px;
+      margin-bottom: 12px;
+      background: rgba(23, 33, 41, .86);
+    }
+
+    .program-copy { min-width: 0; }
+
+    .program-title {
+      color: var(--accent);
+      font-size: 11px;
+      letter-spacing: .13em;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+    }
+
+    .program-help {
+      color: var(--muted);
+      font-size: 11px;
+      margin: 0;
+    }
+
+    .program-editor {
+      width: 100%;
+      min-height: 82px;
+      resize: vertical;
+      border: 1px solid #46636d;
+      border-radius: 8px;
+      padding: 9px 10px;
+      background: #0e181e;
+      color: #e4f1ef;
+      font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      outline: none;
+    }
+
+    .program-editor:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(141, 231, 207, .12); }
+
+    .run-button {
+      align-self: center;
+      min-width: 78px;
+      border: 1px solid var(--accent);
+      border-radius: 7px;
+      padding: 9px 13px;
+      background: var(--accent);
+      color: #10201e;
+      cursor: pointer;
+      font-weight: 700;
+      transition: filter .15s, transform .15s;
+    }
+
+    .run-button:hover { filter: brightness(1.08); }
+    .run-button:active { transform: translateY(1px); }
+    .run-button:disabled { cursor: wait; filter: saturate(.45); opacity: .7; }
+
+    .program-editor, .program-help { grid-column: 1 / -1; }
+
+    .board {
+      position: relative;
+      height: var(--board-h);
+      overflow: hidden;
+      border: 1px solid #3b5662;
+      border-radius: 16px;
+      background:
+        linear-gradient(rgba(108, 164, 170, .06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(108, 164, 170, .06) 1px, transparent 1px),
+        #121c22;
+      background-size: 32px 32px;
+      box-shadow: inset 0 0 60px rgba(0, 0, 0, .28);
+      touch-action: none;
+    }
+
+    .board-caption {
+      position: absolute;
+      left: 18px;
+      top: 14px;
+      color: #69818c;
+      font-size: 10px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+
+    .bay-line {
+      position: absolute;
+      left: 3%;
+      right: 3%;
+      top: 60%;
+      border-top: 1px dashed #31505a;
+      pointer-events: none;
+    }
+
+    .bay-label {
+      position: absolute;
+      left: 3%;
+      top: calc(60% + 10px);
+      color: #69818c;
+      font-size: 10px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+
+    .home {
+      position: absolute;
+      top: 10%;
+      width: 21%;
+      height: 37%;
+      min-height: 146px;
+      padding: 11px;
+      border: 1px dashed #54717c;
+      border-radius: 12px;
+      background: rgba(27, 43, 51, .64);
+      transition: border-color .15s, background .15s, box-shadow .15s;
+    }
+
+    .home:nth-of-type(1) { left: 3%; }
+    .home:nth-of-type(2) { left: 27%; }
+    .home:nth-of-type(3) { left: 51%; }
+    .home:nth-of-type(4) { left: 75%; }
+
+    .home.flash {
+      border-color: var(--accent);
+      background: rgba(58, 119, 108, .26);
+      box-shadow: 0 0 26px rgba(141, 231, 207, .16);
+    }
+
+    .home.wrong {
+      border-color: var(--danger);
+      background: rgba(119, 58, 55, .25);
+    }
+
+    .home-tag {
+      display: block;
+      color: #78929c;
+      font-size: 10px;
+      letter-spacing: .12em;
+      margin-bottom: 13px;
+    }
+
+    .home-target {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      height: 66px;
+    }
+
+    .home-target .tone { opacity: .9; }
+
+    .target-word {
+      color: #dbe8eb;
+      font-size: 11px;
+      text-align: center;
+      line-height: 1.25;
+    }
+
+    .home-note {
+      position: absolute;
+      bottom: 10px;
+      left: 11px;
+      right: 11px;
+      color: #69818c;
+      font-size: 10px;
+      text-align: center;
+    }
+
+    .token {
+      position: absolute;
+      width: 21%;
+      height: 24%;
+      min-height: 110px;
+      padding: 11px;
+      border: 1px solid #54717c;
+      border-radius: 12px;
+      background: linear-gradient(145deg, #243842, #1a2931);
+      box-shadow: 0 8px 18px rgba(0, 0, 0, .2);
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
+      transition: left .18s ease, top .18s ease, border-color .15s, box-shadow .15s, opacity .15s;
+      z-index: 5;
+    }
+
+    .token:nth-of-type(1) { left: 3%; top: 69%; }
+    .token:nth-of-type(2) { left: 27%; top: 69%; }
+    .token:nth-of-type(3) { left: 51%; top: 69%; }
+    .token:nth-of-type(4) { left: 75%; top: 69%; }
+
+    .token:hover { border-color: #8baeb7; }
+    .token.dragging {
+      cursor: grabbing;
+      transition: none;
+      border-color: var(--accent);
+      box-shadow: 0 16px 30px rgba(0, 0, 0, .4), 0 0 22px rgba(141, 231, 207, .17);
+      z-index: 20;
+    }
+
+    .token.placed {
+      cursor: not-allowed;
+      border-color: var(--accent);
+      box-shadow: 0 0 18px rgba(141, 231, 207, .13);
+      z-index: 8;
+    }
+
+    .token.pulse { animation: pulse .42s ease; }
+    .token.shake { animation: shake .36s ease; }
+
+    @keyframes pulse {
+      50% { transform: scale(1.05); }
+    }
+
+    @keyframes shake {
+      25% { transform: translateX(-5px); }
+      75% { transform: translateX(5px); }
+    }
+
+    .token-id {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #78929c;
+      font-size: 10px;
+      letter-spacing: .12em;
+      margin-bottom: 7px;
+    }
+
+    .token-state {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      height: 61px;
+    }
+
+    .tone {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--tone);
+      box-shadow: 0 0 0 5px rgba(255,255,255,.045), 0 0 16px color-mix(in srgb, var(--tone) 42%, transparent);
+      flex: 0 0 auto;
+    }
+
+    .shape-icon {
+      width: 42px;
+      height: 42px;
+      overflow: visible;
+      flex: 0 0 auto;
+    }
+
+    .shape-icon path, .shape-icon circle, .shape-icon rect, .shape-icon polygon {
+      fill: currentColor;
+    }
+
+    .token .shape-icon { color: #e5f0f1; }
+    .home .shape-icon { color: #85a1a8; opacity: .95; }
+
+    .state-text {
+      border-top: 1px solid rgba(132, 172, 181, .16);
+      color: #aac0c6;
+      font-size: 10px;
+      padding-top: 8px;
+      text-align: center;
+    }
+
+    .feedback {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 9px 12px;
+      background: #142027;
+      color: #c4d5da;
+      font-size: 12px;
+    }
+
+    .feedback-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent);
+      flex: 0 0 auto;
+    }
+
+    .feedback.error { color: #ffc0b4; }
+    .feedback.error .feedback-dot { background: var(--danger); box-shadow: 0 0 10px var(--danger); }
+    .feedback.success { color: #baf8e4; }
+
+    @media (max-width: 760px) {
+      :root { --board-h: 570px; }
+      .shell { width: min(100% - 20px, 640px); padding-top: 18px; }
+      .topline { display: block; }
+      .counter { display: inline-block; margin-top: 14px; }
+      .rule { width: 100%; margin-left: 0; }
+      .reset-button { margin-left: 0; }
+      .home { min-height: 140px; }
+      .program { grid-template-columns: 1fr; }
+      .run-button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topline">
+      <div>
+        <div class="eyebrow">Batch 0 // contact laboratory</div>
+        <h1>Property Exchange</h1>
+        <p class="lede">Colors and shapes do not stay put. Make every loose object match a marked home.</p>
+      </div>
+      <div class="counter" id="counter">0 / 4 homes filled</div>
+    </header>
+
+    <section class="controls" aria-label="Touch controls">
+      <span class="controls-label">Next touch trades:</span>
+      <button class="property-button active" data-property="color" type="button">COLOR</button>
+      <button class="property-button" data-property="shape" type="button">SHAPE</button>
+      <span class="rule">Drag one loose object onto another to make contact.</span>
+      <button class="reset-button" id="reset" type="button">Retry</button>
+    </section>
+
+    <section class="program" aria-label="Editable contact plan">
+      <div class="program-copy">
+        <div class="program-title">Editable contact plan // live rule</div>
+        <p class="program-help">One instruction per line: <code>COLOR A B</code> or <code>SHAPE A B</code>. Run applies it to the living objects.</p>
+      </div>
+      <button class="run-button" id="runPlan" type="button">Run</button>
+      <textarea class="program-editor" id="planEditor" spellcheck="false" aria-label="Editable contact plan">COLOR A B
+SHAPE A C
+COLOR C D
+SHAPE B D</textarea>
+      <p class="program-help">Edit the plan, then Run. Placement still happens by dragging the resulting objects into homes.</p>
+    </section>
+
+    <section class="board" id="board" aria-label="Puzzle board">
+      <span class="board-caption">marked homes // exact match required</span>
+      <div class="home" data-home="0"></div>
+      <div class="home" data-home="1"></div>
+      <div class="home" data-home="2"></div>
+      <div class="home" data-home="3"></div>
+      <div class="bay-line"></div>
+      <span class="bay-label">loose objects // touch to exchange</span>
+      <div class="token" data-token="0"></div>
+      <div class="token" data-token="1"></div>
+      <div class="token" data-token="2"></div>
+      <div class="token" data-token="3"></div>
+    </section>
+
+    <div class="feedback" id="feedback" role="status" aria-live="polite">
+      <span class="feedback-dot"></span>
+      <span id="feedbackText">The color trade is armed. Find the first useful contact.</span>
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      const colors = {
+        red: '#ff7569',
+        blue: '#67adff',
+        green: '#76dfa0',
+        yellow: '#ffd66d'
+      };
+
+      const shapes = {
+        circle: '<svg class="shape-icon" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="16"></circle></svg>',
+        square: '<svg class="shape-icon" viewBox="0 0 48 48" aria-hidden="true"><rect x="9" y="9" width="30" height="30" rx="2"></rect></svg>',
+        triangle: '<svg class="shape-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 7 42 40H6Z"></path></svg>',
+        diamond: '<svg class="shape-icon" viewBox="0 0 48 48" aria-hidden="true"><polygon points="24,5 43,24 24,43 5,24"></polygon></svg>'
+      };
+
+      const initialTokens = [
+        { id: 'A', color: 'blue', shape: 'circle' },
+        { id: 'B', color: 'red', shape: 'square' },
+        { id: 'C', color: 'yellow', shape: 'triangle' },
+        { id: 'D', color: 'green', shape: 'diamond' }
+      ];
+
+      const homes = [
+        { label: 'HOME A', color: 'red', shape: 'triangle' },
+        { label: 'HOME B', color: 'blue', shape: 'diamond' },
+        { label: 'HOME C', color: 'green', shape: 'circle' },
+        { label: 'HOME D', color: 'yellow', shape: 'square' }
+      ];
+
+      const board = document.getElementById('board');
+      const tokenEls = [...document.querySelectorAll('.token')];
+      const homeEls = [...document.querySelectorAll('.home')];
+      const feedback = document.getElementById('feedback');
+      const feedbackText = document.getElementById('feedbackText');
+      const counter = document.getElementById('counter');
+      const propertyButtons = [...document.querySelectorAll('.property-button')];
+      const planEditor = document.getElementById('planEditor');
+      const runPlanButton = document.getElementById('runPlan');
+      let tokens;
+      let activeProperty = 'color';
+      let touchCount = 0;
+      let drag = null;
+      let runBusy = false;
+      let runSerial = 0;
+
+      function cloneInitial() {
+        return initialTokens.map((token) => ({ ...token, placedAt: null }));
+      }
+
+      function setFeedback(message, kind = '') {
+        feedback.className = `feedback ${kind}`.trim();
+        feedbackText.textContent = message;
+      }
+
+      function shapeLabel(shape) {
+        return shape.toUpperCase();
+      }
+
+      function renderHome(homeEl, home, index) {
+        homeEl.innerHTML = `
+          <span class="home-tag">${home.label}</span>
+          <div class="home-target">
+            <span class="tone" style="--tone:${colors[home.color]}" title="${home.color}"></span>
+            <span class="target-word">${home.color.toUpperCase()}<br>+</span>
+            ${shapes[home.shape]}
+          </div>
+          <div class="home-note" data-home-note="${index}">awaiting object</div>
+        `;
+      }
+
+      function renderToken(tokenEl, token, index) {
+        tokenEl.innerHTML = `
+          <div class="token-id"><span>OBJECT ${token.id}</span><span>${token.placedAt === null ? 'LOOSE' : 'HOME'}</span></div>
+          <div class="token-state">
+            <span class="tone" style="--tone:${colors[token.color]}" title="${token.color}"></span>
+            ${shapes[token.shape]}
+          </div>
+          <div class="state-text">${token.color.toUpperCase()} + ${shapeLabel(token.shape)}</div>
+        `;
+        tokenEl.classList.toggle('placed', token.placedAt !== null);
+        tokenEl.dataset.token = String(index);
+      }
+
+      function updateCounter() {
+        const filled = tokens.filter((token) => token.placedAt !== null).length;
+        counter.textContent = `${filled} / ${tokens.length} homes filled`;
+      }
+
+      function updateHomeNotes() {
+        homeEls.forEach((homeEl, index) => {
+          const occupantIndex = tokens.findIndex((token) => token.placedAt === index);
+          const note = homeEl.querySelector('[data-home-note]');
+          note.textContent = occupantIndex === -1 ? 'awaiting object' : `object ${tokens[occupantIndex].id} seated`;
+        });
+      }
+
+      function boardPointFromStyle(el) {
+        return {
+          left: parseFloat(el.style.left) || 0,
+          top: parseFloat(el.style.top) || 0
+        };
+      }
+
+      function setTokenPosition(el, point, animate = true) {
+        if (!animate) el.style.transition = 'none';
+        el.style.left = `${point.left}px`;
+        el.style.top = `${point.top}px`;
+        if (!animate) {
+          requestAnimationFrame(() => { el.style.transition = ''; });
+        }
+      }
+
+      function resetPositions() {
+        const rect = board.getBoundingClientRect();
+        const slots = [
+          { x: .03, y: .69 }, { x: .27, y: .69 },
+          { x: .51, y: .69 }, { x: .75, y: .69 }
+        ];
+        tokenEls.forEach((el, index) => {
+          setTokenPosition(el, { left: rect.width * slots[index].x, top: rect.height * slots[index].y }, false);
+        });
+      }
+
+      function renderAll() {
+        homeEls.forEach((homeEl, index) => renderHome(homeEl, homes[index], index));
+        tokenEls.forEach((tokenEl, index) => renderToken(tokenEl, tokens[index], index));
+        updateCounter();
+        updateHomeNotes();
+        resetPositions();
+      }
+
+      function rectsOverlap(a, b, padding = 0) {
+        return !(a.right - padding < b.left || a.left + padding > b.right || a.bottom - padding < b.top || a.top + padding > b.bottom);
+      }
+
+      function findTokenContact(activeEl) {
+        const activeRect = activeEl.getBoundingClientRect();
+        return tokenEls.find((candidate) => {
+          if (candidate === activeEl || tokens[Number(candidate.dataset.token)].placedAt !== null) return false;
+          return rectsOverlap(activeRect, candidate.getBoundingClientRect(), 22);
+        });
+      }
+
+      function findHomeDrop(activeEl) {
+        const tokenRect = activeEl.getBoundingClientRect();
+        const center = { x: (tokenRect.left + tokenRect.right) / 2, y: (tokenRect.top + tokenRect.bottom) / 2 };
+        return homeEls.find((homeEl) => {
+          const rect = homeEl.getBoundingClientRect();
+          return center.x >= rect.left && center.x <= rect.right && center.y >= rect.top && center.y <= rect.bottom;
+        });
+      }
+
+      function swapProperty(aIndex, bIndex, property = activeProperty) {
+        const a = tokens[aIndex];
+        const b = tokens[bIndex];
+        const beforeA = `${a.color} + ${a.shape}`;
+        const beforeB = `${b.color} + ${b.shape}`;
+        const value = a[property];
+        a[property] = b[property];
+        b[property] = value;
+        touchCount += 1;
+        renderToken(tokenEls[aIndex], a, aIndex);
+        renderToken(tokenEls[bIndex], b, bIndex);
+        tokenEls[aIndex].classList.add('pulse');
+        tokenEls[bIndex].classList.add('pulse');
+        setTimeout(() => {
+          tokenEls[aIndex].classList.remove('pulse');
+          tokenEls[bIndex].classList.remove('pulse');
+        }, 450);
+        setFeedback(`Touch ${touchCount}: ${property.toUpperCase()} traded — object ${a.id} ${beforeA} → ${a.color} + ${a.shape}; object ${b.id} updated too.`);
+      }
+
+      function parsePlan() {
+        const instructions = [];
+        const lines = planEditor.value.split(/\r?\n/);
+        for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+          const raw = lines[lineIndex].trim();
+          if (!raw || raw.startsWith('#')) continue;
+          const parts = raw.toUpperCase().split(/\s+/);
+          const property = parts[0]?.toLowerCase();
+          const aIndex = tokens.findIndex((token) => token.id === parts[1]);
+          const bIndex = tokens.findIndex((token) => token.id === parts[2]);
+          if (!['color', 'shape'].includes(property) || parts.length !== 3 || aIndex === -1 || bIndex === -1 || aIndex === bIndex) {
+            return { error: `Line ${lineIndex + 1} is invalid. Use COLOR A B or SHAPE A B.` };
+          }
+          instructions.push({ property, aIndex, bIndex, line: lineIndex + 1 });
+        }
+        return { instructions };
+      }
+
+      function wait(milliseconds) {
+        return new Promise((resolve) => setTimeout(resolve, milliseconds));
+      }
+
+      async function executePlan() {
+        if (runBusy) return;
+        const parsed = parsePlan();
+        if (parsed.error) {
+          setFeedback(parsed.error, 'error');
+          return;
+        }
+        if (parsed.instructions.length === 0) {
+          setFeedback('Run stopped: add at least one contact instruction to the plan.', 'error');
+          return;
+        }
+        if (tokens.some((token) => token.placedAt !== null)) {
+          setFeedback('Run stopped: seated objects are locked. Use Retry before running a new plan.', 'error');
+          return;
+        }
+
+        runBusy = true;
+        const serial = ++runSerial;
+        runPlanButton.disabled = true;
+        setFeedback(`Running ${parsed.instructions.length} contact${parsed.instructions.length === 1 ? '' : 's'} against live objects...`);
+        let stopped = false;
+        for (const instruction of parsed.instructions) {
+          await wait(260);
+          if (serial !== runSerial) return;
+          if (tokens[instruction.aIndex].placedAt !== null || tokens[instruction.bIndex].placedAt !== null) {
+            setFeedback(`Run stopped on line ${instruction.line}: a seated object cannot trade properties.`, 'error');
+            stopped = true;
+            break;
+          }
+          swapProperty(instruction.aIndex, instruction.bIndex, instruction.property);
+        }
+        if (serial === runSerial) {
+          runBusy = false;
+          runPlanButton.disabled = false;
+          if (!stopped) {
+            setFeedback(`Run complete: ${parsed.instructions.length} contact${parsed.instructions.length === 1 ? '' : 's'} applied to the living objects. Now place them.`);
+          }
+        }
+      }
+
+      function placeInHome(tokenIndex, homeIndex) {
+        const token = tokens[tokenIndex];
+        const home = homes[homeIndex];
+        const tokenEl = tokenEls[tokenIndex];
+        if (token.color !== home.color || token.shape !== home.shape) {
+          homeEls[homeIndex].classList.add('wrong');
+          tokenEl.classList.add('shake');
+          setTimeout(() => {
+            homeEls[homeIndex].classList.remove('wrong');
+            tokenEl.classList.remove('shake');
+          }, 500);
+          setFeedback(`Rejected: this is ${token.color.toUpperCase()} + ${shapeLabel(token.shape)}; ${home.label} needs ${home.color.toUpperCase()} + ${shapeLabel(home.shape)}.`, 'error');
+          return false;
+        }
+        const boardRect = board.getBoundingClientRect();
+        const homeRect = homeEls[homeIndex].getBoundingClientRect();
+        const tokenRect = tokenEl.getBoundingClientRect();
+        token.placedAt = homeIndex;
+        setTokenPosition(tokenEl, {
+          left: homeRect.left - boardRect.left + (homeRect.width - tokenRect.width) / 2,
+          top: homeRect.top - boardRect.top + (homeRect.height - tokenRect.height) / 2
+        });
+        renderToken(tokenEl, token, tokenIndex);
+        homeEls[homeIndex].classList.add('flash');
+        setTimeout(() => homeEls[homeIndex].classList.remove('flash'), 700);
+        updateCounter();
+        updateHomeNotes();
+        if (tokens.every((item) => item.placedAt !== null)) {
+          setFeedback(`World stabilized in ${touchCount} touches. All four objects found their homes.`, 'success');
+        } else {
+          setFeedback(`Accepted: object ${token.id} fits ${home.label}. Keep the remaining properties moving.`);
+        }
+        return true;
+      }
+
+      function releaseDrag(event) {
+        if (!drag) return;
+        const current = drag;
+        drag = null;
+        const el = current.el;
+        el.releasePointerCapture?.(event.pointerId);
+        el.classList.remove('dragging');
+        const tokenIndex = Number(el.dataset.token);
+        const token = tokens[tokenIndex];
+        if (token.placedAt !== null) return;
+
+        const contact = findTokenContact(el);
+        if (contact) {
+          const otherIndex = Number(contact.dataset.token);
+          setTokenPosition(el, current.origin);
+          swapProperty(tokenIndex, otherIndex);
+          return;
+        }
+
+        const homeEl = findHomeDrop(el);
+        if (homeEl) {
+          const homeIndex = Number(homeEl.dataset.home);
+          if (placeInHome(tokenIndex, homeIndex)) return;
+        }
+
+        setTokenPosition(el, current.origin);
+        if (!homeEl) setFeedback('No contact. Touch a loose object to trade a property.');
+      }
+
+      tokenEls.forEach((el) => {
+        el.addEventListener('pointerdown', (event) => {
+          const index = Number(el.dataset.token);
+          if (tokens[index].placedAt !== null) {
+            setFeedback(`Object ${tokens[index].id} is seated. Retry to reopen the board.`, 'error');
+            return;
+          }
+          event.preventDefault();
+          const rect = el.getBoundingClientRect();
+          drag = {
+            el,
+            origin: boardPointFromStyle(el),
+            offsetX: event.clientX - rect.left,
+            offsetY: event.clientY - rect.top
+          };
+          el.classList.add('dragging');
+          el.setPointerCapture?.(event.pointerId);
+        });
+
+        el.addEventListener('pointermove', (event) => {
+          if (!drag || drag.el !== el) return;
+          const boardRect = board.getBoundingClientRect();
+          const left = Math.max(0, Math.min(boardRect.width - el.offsetWidth, event.clientX - boardRect.left - drag.offsetX));
+          const top = Math.max(0, Math.min(boardRect.height - el.offsetHeight, event.clientY - boardRect.top - drag.offsetY));
+          setTokenPosition(el, { left, top }, false);
+        });
+
+        el.addEventListener('pointerup', releaseDrag);
+        el.addEventListener('pointercancel', releaseDrag);
+      });
+
+      propertyButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          activeProperty = button.dataset.property;
+          propertyButtons.forEach((item) => item.classList.toggle('active', item === button));
+          setFeedback(`The ${activeProperty.toUpperCase()} trade is armed. Touch two loose objects.`);
+        });
+      });
+
+      runPlanButton.addEventListener('click', executePlan);
+
+      document.getElementById('reset').addEventListener('click', () => {
+        runSerial += 1;
+        runBusy = false;
+        runPlanButton.disabled = false;
+        tokens = cloneInitial();
+        touchCount = 0;
+        activeProperty = 'color';
+        propertyButtons.forEach((button) => button.classList.toggle('active', button.dataset.property === activeProperty));
+        renderAll();
+        setFeedback('Board reset. The color trade is armed. Find the first useful contact.');
+      });
+
+      window.addEventListener('resize', () => {
+        if (!tokens.some((token) => token.placedAt !== null)) resetPositions();
+      });
+
+      tokens = cloneInitial();
+      renderAll();
+    })();
+  </script>
+</body>
+</html>

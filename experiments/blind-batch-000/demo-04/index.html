@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Last Light Irrigation Run</title>
+  <style>
+    :root {
+      --ink: #172622;
+      --muted: #65766d;
+      --paper: #f4f0e4;
+      --paper-deep: #e8e0cf;
+      --line: #c9c2b2;
+      --green: #3f755d;
+      --green-light: #9ac29d;
+      --amber: #c47e35;
+      --red: #b94d42;
+      --shadow: 0 16px 40px rgba(26, 40, 33, .16);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 15% 10%, rgba(255,255,255,.7), transparent 32rem),
+        #d9d4c8;
+      font: 15px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    button {
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .shell {
+      width: min(1050px, calc(100% - 28px));
+      margin: 28px auto;
+      overflow: hidden;
+      background: var(--paper);
+      border: 1px solid rgba(23, 38, 34, .2);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 26px 30px 22px;
+      color: #f7f3e8;
+      background: var(--ink);
+    }
+
+    h1, h2, p { margin: 0; }
+    h1 { font: 800 clamp(25px, 4vw, 42px)/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: -.04em; }
+    h2 { font: 800 16px/1.2 ui-sans-serif, system-ui, sans-serif; letter-spacing: .02em; }
+
+    .eyebrow {
+      margin-bottom: 9px;
+      color: #a9c9ad;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .14em;
+    }
+
+    .sunset {
+      padding: 9px 12px;
+      border: 1px solid rgba(247,243,232,.3);
+      border-radius: 999px;
+      color: #f0c27b;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    main { padding: 24px 30px 30px; }
+
+    .brief {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 24px;
+      padding: 18px 20px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #faf7ee;
+    }
+
+    .brief strong { color: var(--green); }
+    .brief-copy { max-width: 710px; }
+    .brief-copy p + p { margin-top: 5px; color: var(--muted); font-size: 13px; }
+
+    .tank-wrap { min-width: 190px; }
+    .tank-top { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12px; }
+    .tank-top strong { color: var(--ink); font-size: 17px; }
+    .track { height: 10px; overflow: hidden; border-radius: 99px; background: #d8d2c4; }
+    .track > i { display: block; height: 100%; width: 100%; border-radius: inherit; background: var(--green); transition: width .35s ease, background .35s ease; }
+    .track > i.low { background: var(--amber); }
+    .track > i.empty { background: var(--red); }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr);
+      gap: 22px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(250, 247, 238, .68);
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px 12px;
+    }
+
+    .hint { color: var(--muted); font-size: 11px; text-align: right; }
+
+    .plants { display: grid; gap: 10px; padding: 0 12px 14px; }
+    .plant {
+      display: grid;
+      grid-template-columns: 42px minmax(120px, 1fr) minmax(155px, .85fr) auto;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border: 1px solid #d8d0bf;
+      border-radius: 10px;
+      background: var(--paper);
+      transition: border-color .2s, transform .2s, background .2s;
+    }
+
+    .plant.pulse { transform: translateX(3px); border-color: var(--green); background: #f0f6eb; }
+    .plant.wilted { border-color: #d88d83; background: #fff0eb; }
+    .plant.ready { border-color: #9ac29d; }
+
+    .plant-icon {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--paper-deep);
+      font-size: 22px;
+    }
+
+    .plant-name { font-weight: 800; }
+    .plant-meta { margin-top: 2px; color: var(--muted); font-size: 11px; }
+    .meter-label { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 4px; color: var(--muted); font-size: 11px; }
+    .meter-label strong { color: var(--ink); }
+    .meter { height: 9px; overflow: hidden; border-radius: 99px; background: #dad5c8; }
+    .meter i { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--green-light); transition: width .35s ease, background .35s ease; }
+    .meter i.full { background: var(--green); }
+    .meter i.over { background: var(--amber); }
+
+    .route {
+      padding: 8px 10px;
+      border: 1px solid var(--green);
+      border-radius: 7px;
+      background: #e8f1e4;
+      color: var(--green);
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .route:hover, .route:focus-visible { background: var(--green); color: white; }
+    button:disabled { cursor: not-allowed; opacity: .45; }
+
+    .plan-panel { min-height: 100%; }
+    .plan { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; padding: 0 18px 16px; }
+    .slot {
+      min-height: 72px;
+      padding: 8px;
+      border: 1px dashed #b7b09f;
+      border-radius: 8px;
+      background: rgba(255,255,255,.3);
+      text-align: left;
+    }
+    .slot:hover:not(:disabled) { border-color: var(--green); background: #f0f6eb; }
+    .slot-num { display: block; color: var(--muted); font-size: 10px; }
+    .slot-plant { display: block; margin-top: 7px; font-weight: 800; font-size: 12px; }
+    .slot.filled { border-style: solid; border-color: #98b39a; background: #eaf3e5; }
+    .slot.empty .slot-plant { color: #92978e; font-weight: 400; }
+
+    .run-area { display: grid; gap: 10px; padding: 0 18px 18px; }
+    .run {
+      width: 100%;
+      padding: 13px 16px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--ink);
+      color: #fff;
+      font-weight: 800;
+    }
+    .run:hover:not(:disabled), .run:focus-visible { background: var(--green); }
+    .reset { border: 0; background: transparent; color: var(--muted); font-size: 12px; text-decoration: underline; }
+
+    .log-panel { margin-top: 22px; }
+    .log { min-height: 116px; max-height: 170px; overflow: auto; padding: 0 18px 16px; }
+    .log-line { display: flex; gap: 10px; padding: 7px 0; border-top: 1px solid #ded8cb; color: #52645b; font-size: 12px; }
+    .log-line b { min-width: 28px; color: var(--green); }
+    .log-line.alert { color: var(--red); }
+    .log-line.alert b { color: var(--red); }
+    .log-line.good { color: var(--green); }
+
+    .result {
+      display: none;
+      margin-top: 22px;
+      padding: 15px 18px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #faf7ee;
+    }
+    .result.show { display: block; }
+    .result.success { border-color: #91b58e; background: #edf6e9; }
+    .result.failure { border-color: #d69a8f; background: #fff0eb; }
+    .result h2 { margin-bottom: 5px; }
+    .result p { color: var(--muted); font-size: 12px; }
+
+    .footer-note { margin-top: 13px; color: var(--muted); font-size: 11px; }
+
+    @media (max-width: 760px) {
+      header, .brief { grid-template-columns: 1fr; display: grid; }
+      .layout { grid-template-columns: 1fr; }
+      .plant { grid-template-columns: 42px minmax(100px, 1fr) auto; }
+      .plant .meter-wrap { grid-column: 2 / -1; grid-row: 2; }
+      .plant .route { grid-column: 3; grid-row: 1; }
+      .hint { text-align: left; }
+    }
+
+    @media (max-width: 470px) {
+      main { padding: 18px 14px 20px; }
+      header { padding: 22px 18px 18px; }
+      .plan { grid-template-columns: repeat(2, 1fr); }
+      .plant { grid-template-columns: 38px 1fr auto; gap: 8px; padding: 9px; }
+      .plant-icon { width: 36px; height: 36px; }
+      .route { padding: 7px 8px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div>
+        <p class="eyebrow">GREENHOUSE // BATCH 0</p>
+        <h1>Last Light<br>Irrigation Run</h1>
+      </div>
+      <div class="sunset">SUNSET IN 6 VALVE TURNS</div>
+    </header>
+
+    <main>
+      <section class="brief" aria-label="mission brief">
+        <div class="brief-copy">
+          <p><strong>Mission:</strong> get every bed enough water before the sun drops.</p>
+          <p>Each route spends 2L and takes one turn. Queue the valve plan, then run it. A bed that reaches its deadline thirsty will wilt.</p>
+        </div>
+        <div class="tank-wrap">
+          <div class="tank-top"><span>SHARED RESERVOIR</span><strong id="tankValue">10L</strong></div>
+          <div class="track" aria-label="reservoir level"><i id="tankFill"></i></div>
+        </div>
+      </section>
+
+      <div class="layout">
+        <section class="panel" aria-labelledby="beds-title">
+          <div class="panel-head">
+            <h2 id="beds-title">THIRSTY BEDS</h2>
+            <span class="hint">Route one 2L pour</span>
+          </div>
+          <div class="plants" id="plants"></div>
+        </section>
+
+        <section class="panel plan-panel" aria-labelledby="plan-title">
+          <div class="panel-head">
+            <h2 id="plan-title">VALVE PLAN</h2>
+            <span class="hint">Click a filled turn to clear it</span>
+          </div>
+          <div class="plan" id="plan"></div>
+          <div class="run-area">
+            <button class="run" id="runButton">RUN THE DAY</button>
+            <button class="reset" id="resetButton">clear plan</button>
+          </div>
+        </section>
+      </div>
+
+      <section class="result" id="result" aria-live="polite"></section>
+
+      <section class="panel log-panel" aria-labelledby="log-title">
+        <div class="panel-head">
+          <h2 id="log-title">FIELD LOG</h2>
+          <span class="hint" id="turnReadout">Awaiting plan</span>
+        </div>
+        <div class="log" id="log">
+          <div class="log-line"><b>--</b><span>Queue your valve turns, then start the run.</span></div>
+        </div>
+      </section>
+
+      <p class="footer-note">Tip: the tightest deadline is not always the bed with the biggest thirst.</p>
+    </main>
+  </div>
+
+  <script>
+    (() => {
+      const plants = [
+        { id: 'pepper', name: 'Pepper', icon: '🌶️', need: 4, deadline: 4 },
+        { id: 'mint', name: 'Mint', icon: '🌿', need: 2, deadline: 3 },
+        { id: 'fern', name: 'Fern', icon: '🌱', need: 4, deadline: 6 }
+      ];
+      const maxReservoir = 10;
+      const turns = 6;
+      let plan = Array(turns).fill(null);
+      let delivered = Object.fromEntries(plants.map(plant => [plant.id, 0]));
+      let reservoir = maxReservoir;
+      let running = false;
+      let runTimer = null;
+      let currentTurn = 0;
+      let outcome = null;
+
+      const plantsEl = document.getElementById('plants');
+      const planEl = document.getElementById('plan');
+      const tankValueEl = document.getElementById('tankValue');
+      const tankFillEl = document.getElementById('tankFill');
+      const runButton = document.getElementById('runButton');
+      const resetButton = document.getElementById('resetButton');
+      const resultEl = document.getElementById('result');
+      const logEl = document.getElementById('log');
+      const turnReadoutEl = document.getElementById('turnReadout');
+
+      function plantById(id) {
+        return plants.find(plant => plant.id === id);
+      }
+
+      function renderPlants() {
+        plantsEl.innerHTML = plants.map(plant => {
+          const amount = delivered[plant.id];
+          const percentage = Math.min(100, (amount / plant.need) * 100);
+          const state = outcome && outcome.wilted.includes(plant.id)
+            ? 'wilted'
+            : amount >= plant.need ? 'ready' : '';
+          const status = outcome && outcome.wilted.includes(plant.id)
+            ? 'WILTED'
+            : amount >= plant.need ? 'SAFE'
+            : running ? 'THIRSTY' : 'WAITING';
+          return `
+            <article class="plant ${state}" data-plant="${plant.id}">
+              <div class="plant-icon" aria-hidden="true">${plant.icon}</div>
+              <div>
+                <div class="plant-name">${plant.name}</div>
+                <div class="plant-meta">${status} · need ${plant.need}L by turn ${plant.deadline}</div>
+              </div>
+              <div class="meter-wrap">
+                <div class="meter-label"><span>delivered</span><strong>${amount} / ${plant.need}L</strong></div>
+                <div class="meter"><i class="${amount >= plant.need ? 'full' : ''}" style="width:${percentage}%"></i></div>
+              </div>
+              <button class="route" data-route="${plant.id}" ${running ? 'disabled' : ''}>+ 2L route</button>
+            </article>`;
+        }).join('');
+
+        plantsEl.querySelectorAll('[data-route]').forEach(button => {
+          button.addEventListener('click', () => addToPlan(button.dataset.route));
+        });
+      }
+
+      function renderPlan() {
+        planEl.innerHTML = plan.map((id, index) => {
+          const plant = id ? plantById(id) : null;
+          return `<button class="slot ${plant ? 'filled' : 'empty'}" data-slot="${index}" ${running ? 'disabled' : ''}>
+            <span class="slot-num">TURN ${index + 1}</span>
+            <span class="slot-plant">${plant ? `${plant.icon} ${plant.name}` : '— open —'}</span>
+          </button>`;
+        }).join('');
+        planEl.querySelectorAll('[data-slot]').forEach(button => {
+          button.addEventListener('click', () => {
+            const slot = Number(button.dataset.slot);
+            if (!running) {
+              plan[slot] = null;
+              renderPlan();
+              updateRunButton();
+            }
+          });
+        });
+      }
+
+      function addToPlan(id) {
+        if (running || outcome) return;
+        const openSlot = plan.findIndex(slot => slot === null);
+        if (openSlot === -1) {
+          writeLog('--', 'The valve plan is full. Clear a turn to change it.');
+          return;
+        }
+        plan[openSlot] = id;
+        renderPlan();
+        updateRunButton();
+      }
+
+      function updateTank() {
+        const percentage = Math.max(0, Math.min(100, (reservoir / maxReservoir) * 100));
+        tankValueEl.textContent = `${reservoir}L`;
+        tankFillEl.style.width = `${percentage}%`;
+        tankFillEl.className = reservoir === 0 ? 'empty' : reservoir <= 4 ? 'low' : '';
+      }
+
+      function updateRunButton() {
+        const filled = plan.filter(Boolean).length;
+        runButton.disabled = running || outcome !== null || filled === 0;
+        runButton.textContent = filled === turns ? 'RUN THE DAY' : `RUN ${filled} OF ${turns} TURNS`;
+      }
+
+      function clearLog() {
+        logEl.innerHTML = '';
+      }
+
+      function writeLog(turn, message, type = '') {
+        const line = document.createElement('div');
+        line.className = `log-line ${type}`;
+        line.innerHTML = `<b>${turn}</b><span>${message}</span>`;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      function showResult(success, message) {
+        resultEl.className = `result show ${success ? 'success' : 'failure'}`;
+        resultEl.innerHTML = `<h2>${success ? '✓ EVERY BED MADE IT' : '✕ THE GREENHOUSE MISSED SUNSET'}</h2><p>${message}</p>`;
+      }
+
+      function stopRun() {
+        clearInterval(runTimer);
+        runTimer = null;
+        running = false;
+        renderPlants();
+        renderPlan();
+        updateRunButton();
+      }
+
+      function evaluateFinal() {
+        const wilted = plants.filter(plant => delivered[plant.id] < plant.need).map(plant => plant.id);
+        outcome = { wilted };
+        const success = wilted.length === 0 && reservoir >= 0;
+        if (success) {
+          writeLog('END', `All beds are covered. ${reservoir}L remains in the tank.`, 'good');
+          showResult(true, 'Your schedule balanced urgency and total demand. The plants can make it through the night.');
+        } else {
+          const evidence = plants
+            .filter(plant => wilted.includes(plant.id))
+            .map(plant => `${plant.name} ended at ${delivered[plant.id]}L / ${plant.need}L`)
+            .join('; ');
+          writeLog('END', evidence + '.', 'alert');
+          showResult(false, `${evidence}. Retry with the field log as evidence: a missed deadline cannot be repaired after the sun moves on.`);
+        }
+        runButton.textContent = 'RUN COMPLETE';
+        turnReadoutEl.textContent = success ? 'Harvest secured' : 'Evidence captured';
+        stopRun();
+      }
+
+      function runTurn() {
+        if (currentTurn >= turns) {
+          evaluateFinal();
+          return;
+        }
+        const turnNumber = currentTurn + 1;
+        const id = plan[currentTurn];
+        if (!id) {
+          writeLog(`T${turnNumber}`, 'Valve idle — no bed receives water.', 'alert');
+        } else if (reservoir < 2) {
+          writeLog(`T${turnNumber}`, `The tank is empty before ${plantById(id).name} can be routed.`, 'alert');
+        } else {
+          const plant = plantById(id);
+          reservoir -= 2;
+          delivered[id] += 2;
+          writeLog(`T${turnNumber}`, `Routed 2L to ${plant.name}. Tank now holds ${reservoir}L.`);
+          const element = document.querySelector(`[data-plant="${id}"]`);
+          if (element) {
+            element.classList.remove('pulse');
+            void element.offsetWidth;
+            element.classList.add('pulse');
+          }
+        }
+
+        const due = plants.find(plant => plant.deadline === turnNumber && delivered[plant.id] < plant.need);
+        if (due) {
+          writeLog(`T${turnNumber}`, `${due.name} missed its deadline with ${delivered[due.id]}L / ${due.need}L.`, 'alert');
+        }
+        currentTurn += 1;
+        updateTank();
+        turnReadoutEl.textContent = `Turn ${currentTurn} / ${turns}`;
+        renderPlants();
+        if (currentTurn >= turns) evaluateFinal();
+      }
+
+      function startRun() {
+        if (running || outcome || plan.every(slot => slot === null)) return;
+        running = true;
+        currentTurn = 0;
+        clearLog();
+        resultEl.className = 'result';
+        renderPlants();
+        renderPlan();
+        updateRunButton();
+        writeLog('GO', 'Sun is moving. The valve follows your plan.');
+        runTimer = setInterval(runTurn, 620);
+      }
+
+      function resetGame() {
+        clearInterval(runTimer);
+        runTimer = null;
+        plan = Array(turns).fill(null);
+        delivered = Object.fromEntries(plants.map(plant => [plant.id, 0]));
+        reservoir = maxReservoir;
+        running = false;
+        currentTurn = 0;
+        outcome = null;
+        resultEl.className = 'result';
+        turnReadoutEl.textContent = 'Awaiting plan';
+        clearLog();
+        writeLog('--', 'Queue your valve turns, then start the run.');
+        updateTank();
+        renderPlants();
+        renderPlan();
+        updateRunButton();
+      }
+
+      runButton.addEventListener('click', startRun);
+      resetButton.addEventListener('click', resetGame);
+      updateTank();
+      renderPlants();
+      renderPlan();
+      updateRunButton();
+    })();
+  </script>
+</body>
+</html>
