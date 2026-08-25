@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Echo Twin Waltz — demo-03</title>
+<style>
+  body{margin:0;font-family:'Segoe UI',system-ui,sans-serif;background:#201a27;color:#f3edf5;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:14px;box-sizing:border-box}
+  h1{font-size:20px;margin:4px 0 2px}
+  .sub{color:#b39fc7;font-size:13px;margin-bottom:12px;max-width:660px;text-align:center}
+  #wrap{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
+  #stage{position:relative;width:460px;height:300px;background:linear-gradient(#33253f,#191221);border-radius:14px;overflow:hidden;border:2px solid rgba(200,162,255,.25)}
+  #floor{position:absolute;left:0;right:0;bottom:0;height:90px;background:#3b2f47;border-top:3px solid #55426b}
+  .plate{position:absolute;top:206px;width:46px;height:10px;background:#6b5a80;border-radius:4px;transition:transform .1s, background .1s}
+  .plate.pressed{transform:translateY(4px);background:#ffd166;box-shadow:0 0 14px #ffd166}
+  .plabel{position:absolute;top:222px;width:46px;text-align:center;font-size:11px;color:#b39fc7}
+  #door{position:absolute;left:205px;top:30px;width:50px;height:80px;background:#584a6b;border:3px solid #74618c;border-radius:8px 8px 0 0;transition:transform .8s;z-index:2}
+  #doorlight{position:absolute;left:205px;top:30px;width:50px;height:80px;background:radial-gradient(circle,#ffe8a3,#ffd16688 60%,transparent);opacity:0;transition:opacity .5s;z-index:1}
+  #door.open{transform:translateY(-84px)}
+  .hero{position:absolute;width:56px;height:56px;left:0;top:0;z-index:3}
+  #echo{position:absolute;width:56px;height:56px;left:0;top:0;z-index:2;opacity:.6;filter:sepia(1) saturate(3) hue-rotate(-10deg) brightness(1.2);display:none}
+  @keyframes wave{0%,100%{transform:rotate(0)}50%{transform:rotate(-6deg)}}
+  .hero.wave{animation:wave .4s ease 3}
+  #banner{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(20,12,28,.6);font-size:22px;font-weight:700;color:#ffd166;text-align:center;z-index:5}
+  #panel{width:300px;background:#241b2e;border-radius:14px;padding:12px}
+  label{font-size:12px;color:#b39fc7}
+  textarea{width:100%;box-sizing:border-box;background:#170f20;color:#ecdfd8f5;color:#eadff5;border:1px solid rgba(200,162,255,.4);border-radius:8px;font-family:ui-monospace,monospace;font-size:13px;padding:8px;margin:6px 0}
+  input[type=number]{width:70px;background:#170f20;color:#eadff5;border:1px solid rgba(200,162,255,.4);border-radius:6px;padding:5px;font-family:ui-monospace,monospace}
+  button{background:#c8a2ff;border:none;color:#241335;font-weight:700;padding:8px 14px;border-radius:8px;cursor:pointer;margin-right:6px}
+  button.ghost{background:#3d2f4e;color:#e5d8f5}
+  #meterWrap{margin-top:10px;height:10px;background:#170f20;border-radius:5px;overflow:hidden}
+  #meter{height:100%;width:0%;background:linear-gradient(90deg,#ffd166,#ff9f6e)}
+  #readout{margin-top:6px;font-size:13px;color:#ffd166}
+  #status{margin-top:6px;font-size:13px;min-height:36px;color:#ffb3c1;line-height:1.4}
+  .hint{font-size:12px;color:#8f7ba8;margin-top:8px;line-height:1.45}
+  a.back{color:#7a658a;font-size:12px;display:block;margin-top:10px}
+</style>
+</head>
+<body>
+<h1>Echo Twin Waltz</h1>
+<div class="sub">A stone door opens only while <b>both</b> floor plates are held at the same time (1 full second).
+Pip's golden echo replays her <b>exact same plan</b>, offset by D seconds. One dancer, one plan, two bodies.</div>
+<div id="wrap">
+  <div id="stage">
+    <div id="doorlight"></div>
+    <div id="door"></div>
+    <div class="plate" id="plateA" style="left:127px"></div>
+    <div class="plabel" style="left:127px">plate A</div>
+    <div class="plate" id="plateB" style="left:287px"></div>
+    <div class="plabel" style="left:287px">plate B</div>
+    <div class="hero" id="hero">
+      <svg viewBox="0 0 64 64" width="56" height="56">
+        <line x1="32" y1="12" x2="32" y2="21" stroke="#1d9a8f" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="32" cy="9" r="4.5" fill="#ffd166"/>
+        <ellipse cx="32" cy="37" rx="16" ry="18" fill="#2ec4b6"/>
+        <ellipse cx="32" cy="45" rx="9" ry="8.5" fill="#d8f5f2"/>
+        <circle cx="25" cy="31" r="6.5" fill="#fff"/>
+        <circle cx="39" cy="31" r="6.5" fill="#fff"/>
+        <circle cx="26.5" cy="32.5" r="3" fill="#073b4c"/>
+        <circle cx="40.5" cy="32.5" r="3" fill="#073b4c"/>
+        <ellipse cx="24" cy="56" rx="6" ry="3.5" fill="#ef8354"/>
+        <ellipse cx="40" cy="56" rx="6" ry="3.5" fill="#ef8354"/>
+      </svg>
+    </div>
+    <div id="echo">
+      <svg viewBox="0 0 64 64" width="56" height="56">
+        <line x1="32" y1="12" x2="32" y2="21" stroke="#1d9a8f" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="32" cy="9" r="4.5" fill="#ffd166"/>
+        <ellipse cx="32" cy="37" rx="16" ry="18" fill="#2ec4b6"/>
+        <ellipse cx="32" cy="45" rx="9" ry="8.5" fill="#d8f5f2"/>
+        <circle cx="25" cy="31" r="6.5" fill="#fff"/>
+        <circle cx="39" cy="31" r="6.5" fill="#fff"/>
+        <circle cx="26.5" cy="32.5" r="3" fill="#073b4c"/>
+        <circle cx="40.5" cy="32.5" r="3" fill="#073b4c"/>
+        <ellipse cx="24" cy="56" rx="6" ry="3.5" fill="#ef8354"/>
+        <ellipse cx="40" cy="56" rx="6" ry="3.5" fill="#ef8354"/>
+      </svg>
+    </div>
+    <div id="floor"></div>
+    <div id="banner"></div>
+  </div>
+  <div id="panel">
+    <label>Pip's plan — lines: <b>startSec-endSec: right | left | wait</b></label>
+    <textarea id="program" rows="4">0-2: right
+2-99: wait</textarea>
+    <label>Echo offset D (seconds late): <input type="number" id="delay" value="0" step="0.5" min="0" max="10"></label>
+    <div style="margin-top:8px">
+      <button id="runBtn">Run</button><button id="resetBtn" class="ghost">Reset</button>
+    </div>
+    <div id="meterWrap"><div id="meter"></div></div>
+    <div id="readout">door needs 1.00s of both plates</div>
+    <div id="status">Press Run. Watch where the echo lands relative to Pip.</div>
+    <div class="hint">Walk speed: 55 px/s. Pip starts at x=45, plate A at x=150, plate B at x=310. A pure nonstop walk gets <i>almost</i> there… but 0.79s isn't 1.00s.</div>
+    <a class="back" href="../index.html">← portal</a>
+  </div>
+</div>
+<script>
+const hero=document.getElementById('hero'), echoEl=document.getElementById('echo'),
+      plateA=document.getElementById('plateA'), plateB=document.getElementById('plateB'),
+      door=document.getElementById('door'), doorlight=document.getElementById('doorlight'),
+      meter=document.getElementById('meter'), readout=document.getElementById('readout'),
+      statusEl=document.getElementById('status'), banner=document.getElementById('banner'),
+      program=document.getElementById('program'), delayIn=document.getElementById('delay');
+const SPEED=55, AX=150, BX=310, TMAX=14, GROUND_TOP=210;
+let segs=[], running=false, raf=null, lastTs=0, t=0, overlap=0, D=0;
+
+function parseProgram(){
+  segs=[];
+  for(const ln of program.value.split('\n')){
+    const m=ln.match(/(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*:\s*(right|left|wait)/i);
+    if(m) segs.push({a:+m[1], b:+m[2], op:m[3].toLowerCase()});
+  }
+  segs.sort((p,q)=>p.a-q.a);
+}
+function posAt(tt){
+  let x=45;
+  for(const s of segs){
+    if(tt<=s.a) break;
+    const d=Math.min(tt,s.b)-s.a;
+    if(s.op==='right') x+=SPEED*d;
+    else if(s.op==='left') x-=SPEED*d;
+    x=Math.max(30,Math.min(410,x));
+    if(tt<=s.b) break;
+  }
+  return x;
+}
+function frame(ts){
+  if(!running) return;
+  const dt=Math.min(0.05,(ts-lastTs)/1000||0); lastTs=ts; t+=dt;
+  const hx=posAt(t), ex=(t>=D)?posAt(t-D):null;
+  const aOn=[hx,ex].some(x=>x!==null&&Math.abs(x-AX)<=23);
+  const bOn=[hx,ex].some(x=>x!==null&&Math.abs(x-BX)<=23);
+  if(aOn&&bOn) overlap+=dt;
+  render(hx,ex,aOn,bOn);
+  if(overlap>=1){end(true,'Both plates sang together — the door rumbles open!');return;}
+  if(t>=TMAX){
+    end(false, overlap>0
+      ? `So close! Both plates glowed for ${overlap.toFixed(2)}s — the door insists on 1.00s.`
+      : 'One plate glowed, one stayed cold. The echo is your twin — offset it, and give it somewhere different to be.');
+    return;
+  }
+  raf=requestAnimationFrame(frame);
+}
+function render(hx,ex,aOn,bOn){
+  hero.style.transform=`translate(${hx-28}px, ${GROUND_TOP-56}px)`;
+  if(ex===null){echoEl.style.display='none';}
+  else{echoEl.style.display='block'; echoEl.style.transform=`translate(${ex-28}px, ${GROUND_TOP-56}px)`;}
+  plateA.classList.toggle('pressed',aOn);
+  plateB.classList.toggle('pressed',bOn);
+  meter.style.width=Math.min(100,overlap*100)+'%';
+  readout.textContent=`t=${t.toFixed(1)}s · both-held ${overlap.toFixed(2)}s / 1.00s`;
+}
+function end(win,msg){
+  running=false; cancelAnimationFrame(raf); statusEl.textContent=msg;
+  if(win){
+    door.classList.add('open'); doorlight.style.opacity='1';
+    banner.style.display='flex'; banner.textContent='🚪 The door opens! 🚪';
+    hero.classList.add('wave');
+  }
+}
+function reset(){
+  running=false; cancelAnimationFrame(raf);
+  t=0; overlap=0;
+  door.classList.remove('open'); doorlight.style.opacity='0';
+  banner.style.display='none'; hero.classList.remove('wave');
+  plateA.classList.remove('pressed'); plateB.classList.remove('pressed');
+  meter.style.width='0%'; render(45,null,false,false);
+  readout.textContent='door needs 1.00s of both plates';
+}
+document.getElementById('runBtn').onclick=()=>{
+  reset(); parseProgram(); D=Math.max(0,+delayIn.value||0);
+  running=true; lastTs=performance.now();
+  statusEl.textContent='Pip and her golden echo begin the waltz…';
+  raf=requestAnimationFrame(frame);
+};
+document.getElementById('resetBtn').onclick=()=>{reset(); statusEl.textContent='Press Run. Watch where the echo lands relative to Pip.';};
+reset();
+</script>
+</body>
+</html>

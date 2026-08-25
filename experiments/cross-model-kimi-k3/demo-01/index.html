@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gravity Dial Hollow — demo-01</title>
+<style>
+  body{margin:0;font-family:'Segoe UI',system-ui,sans-serif;background:#0f2027;color:#eaf6f5;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:14px;box-sizing:border-box}
+  h1{font-size:20px;margin:4px 0 2px}
+  .sub{color:#8fc7c2;font-size:13px;margin-bottom:12px;max-width:660px;text-align:center}
+  #wrap{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
+  #stage{position:relative;width:460px;height:360px;background:linear-gradient(#1b4452,#0e2731);border-radius:14px;overflow:hidden;border:2px solid rgba(46,196,182,.25)}
+  #ground{position:absolute;left:0;right:0;bottom:0;height:34px;background:#274b3a;border-top:3px solid #3a6b52}
+  .moss{position:absolute;left:145px;width:150px;height:20px;background:#3d5a45;border-radius:10px;overflow:hidden;border:2px solid #2c4434}
+  .moss .wet{position:absolute;left:0;top:0;bottom:0;width:0%;background:linear-gradient(90deg,#57cc99,#80ed99)}
+  .moss .flower{position:absolute;right:-10px;top:-14px;font-size:0;transition:font-size .4s}
+  .moss.bloomed .flower{font-size:18px}
+  #pod{position:absolute;left:0;top:0;width:34px;height:34px}
+  #dial{position:absolute;left:14px;bottom:44px;width:64px;height:64px}
+  #needle{transform-origin:center;transform-box:fill-box;transition:transform .15s}
+  .hero{position:absolute;width:56px;height:56px;left:92px;top:270px}
+  @keyframes jump{0%,100%{transform:translateY(0)}40%{transform:translateY(-16px)}}
+  .hero.jump{animation:jump .5s ease 3}
+  #banner{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(6,37,43,.55);font-size:22px;font-weight:700;color:#ffd166;text-align:center;z-index:5}
+  #panel{width:300px;background:#122e37;border-radius:14px;padding:12px}
+  label{font-size:12px;color:#8fc7c2}
+  textarea{width:100%;box-sizing:border-box;background:#0b1f26;color:#d8f5f2;border:1px solid rgba(46,196,182,.4);border-radius:8px;font-family:ui-monospace,monospace;font-size:13px;padding:8px;margin:6px 0}
+  button{background:#2ec4b6;border:none;color:#06252b;font-weight:700;padding:8px 14px;border-radius:8px;cursor:pointer;margin-right:6px}
+  button.ghost{background:#24454e;color:#cde}
+  #readout{margin-top:10px;font-size:13px;color:#80ed99}
+  #status{margin-top:6px;font-size:13px;min-height:36px;color:#ffd166;line-height:1.4}
+  .hint{font-size:12px;color:#6fa8a2;margin-top:8px;line-height:1.45}
+  a.back{color:#557f8a;font-size:12px;display:block;margin-top:10px}
+</style>
+</head>
+<body>
+<h1>Gravity Dial Hollow</h1>
+<div class="sub">A float-pod (buoyancy 10) must linger inside each moss band until the moss drinks its fill.
+Pip only controls one thing: the hollow's <b>gravity law over time</b>.</div>
+<div id="wrap">
+  <div id="stage">
+    <div class="moss" style="top:60px"><div class="wet"></div><div class="flower">🌸</div></div>
+    <div class="moss" style="top:150px"><div class="wet"></div><div class="flower">🌸</div></div>
+    <div class="moss" style="top:240px"><div class="wet"></div><div class="flower">🌸</div></div>
+    <div id="pod">
+      <svg viewBox="0 0 40 40" width="34" height="34">
+        <ellipse cx="20" cy="15" rx="14" ry="12" fill="#ffd166"/>
+        <ellipse cx="20" cy="15" rx="8" ry="6" fill="#ffe8a3"/>
+        <rect x="15" y="25" width="10" height="9" rx="2" fill="#8d6b4a"/>
+        <line x1="12" y1="23" x2="16" y2="27" stroke="#8d6b4a" stroke-width="2"/>
+        <line x1="28" y1="23" x2="24" y2="27" stroke="#8d6b4a" stroke-width="2"/>
+      </svg>
+    </div>
+    <div id="dial">
+      <svg viewBox="0 0 64 64" width="64" height="64">
+        <circle cx="32" cy="32" r="24" fill="#0b1f26" stroke="#2ec4b6" stroke-width="2"/>
+        <line id="needle" x1="32" y1="32" x2="32" y2="14" stroke="#ffd166" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="32" cy="32" r="4" fill="#ffd166"/>
+      </svg>
+    </div>
+    <div class="hero" id="hero">
+      <svg viewBox="0 0 64 64" width="56" height="56">
+        <line x1="32" y1="12" x2="32" y2="21" stroke="#1d9a8f" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="32" cy="9" r="4.5" fill="#ffd166"/>
+        <ellipse cx="32" cy="37" rx="16" ry="18" fill="#2ec4b6"/>
+        <ellipse cx="32" cy="45" rx="9" ry="8.5" fill="#d8f5f2"/>
+        <circle cx="25" cy="31" r="6.5" fill="#fff"/>
+        <circle cx="39" cy="31" r="6.5" fill="#fff"/>
+        <circle cx="26.5" cy="32.5" r="3" fill="#073b4c"/>
+        <circle cx="40.5" cy="32.5" r="3" fill="#073b4c"/>
+        <ellipse cx="24" cy="56" rx="6" ry="3.5" fill="#ef8354"/>
+        <ellipse cx="40" cy="56" rx="6" ry="3.5" fill="#ef8354"/>
+      </svg>
+    </div>
+    <div id="ground"></div>
+    <div id="banner"></div>
+  </div>
+  <div id="panel">
+    <label>Gravity law — one rule per line: <b>startSec-endSec: g</b> (buoyancy = 10, so g&lt;10 rises, g&gt;10 sinks)</label>
+    <textarea id="program" rows="4">0-3: 4
+3-20: 16</textarea>
+    <button id="runBtn">Run</button><button id="resetBtn" class="ghost">Reset</button>
+    <div id="readout">gravity: —</div>
+    <div id="status">Press Run. Watch what this plausible-but-wrong law does to the pod.</div>
+    <div class="hint">Moss drinks only while the pod hovers inside its band for a while. A pod that rockets past, bonks the ceiling, or naps on the ground is telling you something.</div>
+    <a class="back" href="../index.html">← portal</a>
+  </div>
+</div>
+<script>
+const bands=[...document.querySelectorAll('.moss')].map((el,i)=>({el,wetEl:el.querySelector('.wet'),y:[70,160,250][i],wet:0}));
+const pod=document.getElementById('pod'), hero=document.getElementById('hero'),
+      readout=document.getElementById('readout'), statusEl=document.getElementById('status'),
+      banner=document.getElementById('banner'), needle=document.getElementById('needle'),
+      program=document.getElementById('program');
+const PODX=220, TOP=46, FLOOR=318;
+let segs=[], running=false, raf=null, lastTs=0, t=0, y=FLOOR, v=0;
+
+function parseProgram(){
+  segs=[];
+  for(const ln of program.value.split('\n')){
+    const m=ln.match(/(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*:\s*(-?\d+(?:\.\d+)?)/);
+    if(m) segs.push({a:+m[1], b:+m[2], g:+m[3]});
+  }
+  segs.sort((p,q)=>p.a-q.a);
+}
+function gAt(t){
+  for(const s of segs) if(t>=s.a && t<=s.b) return s.g;
+  let g=10, best=-1;
+  for(const s of segs) if(s.b<t && s.b>best){best=s.b; g=s.g;}
+  return g;
+}
+function frame(ts){
+  if(!running) return;
+  const dt=Math.min(0.05,(ts-lastTs)/1000||0); lastTs=ts; t+=dt;
+  const g=gAt(t);
+  v+=(g-10)*42*dt;
+  v*=Math.max(0,1-0.5*dt);
+  y+=v*dt;
+  if(y<TOP){y=TOP; v=Math.abs(v)*0.35;}
+  if(y>FLOOR){y=FLOOR; v=-Math.abs(v)*0.35; if(Math.abs(v)<10)v=0;}
+  for(const b of bands) if(Math.abs(y-b.y)<22) b.wet=Math.min(1,b.wet+dt/1.6);
+  render(g);
+  if(bands.every(b=>b.wet>=1)){end(true,'Every moss band drank its fill — the hollow blooms!');return;}
+  if(t>=20){end(false,'The pod dozes off. The moss is still thirsty — rewrite the law and Run again.');return;}
+  raf=requestAnimationFrame(frame);
+}
+function render(g){
+  pod.style.transform=`translate(${PODX-17}px, ${y-17}px)`;
+  needle.style.transform=`rotate(${(g-10)*7}deg)`;
+  for(const b of bands){
+    b.wetEl.style.width=(b.wet*100)+'%';
+    if(b.wet>=1) b.el.classList.add('bloomed');
+  }
+  readout.textContent=`t=${t.toFixed(1)}s · gravity ${g} → pod ${g>10?'drifts down':g<10?'buoys up':'hovers'}`;
+}
+function end(win,msg){
+  running=false; cancelAnimationFrame(raf); statusEl.textContent=msg;
+  if(win){banner.style.display='flex'; banner.textContent='🌸 The hollow blooms! 🌸'; hero.classList.add('jump');}
+}
+function reset(){
+  running=false; cancelAnimationFrame(raf);
+  t=0; y=FLOOR; v=0;
+  bands.forEach(b=>{b.wet=0; b.wetEl.style.width='0%'; b.el.classList.remove('bloomed');});
+  banner.style.display='none'; hero.classList.remove('jump');
+  render(10); readout.textContent='gravity: —';
+}
+document.getElementById('runBtn').onclick=()=>{
+  reset(); parseProgram(); running=true; lastTs=performance.now();
+  statusEl.textContent='The hollow obeys your law…';
+  raf=requestAnimationFrame(frame);
+};
+document.getElementById('resetBtn').onclick=()=>{reset(); statusEl.textContent='Press Run. Watch what this plausible-but-wrong law does to the pod.';};
+reset();
+</script>
+</body>
+</html>

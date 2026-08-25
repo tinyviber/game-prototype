@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Firefly Lamplighter — demo-02</title>
+<style>
+  body{margin:0;font-family:'Segoe UI',system-ui,sans-serif;background:#0c1b26;color:#eaf6f5;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:14px;box-sizing:border-box}
+  h1{font-size:20px;margin:4px 0 2px}
+  .sub{color:#8fa8c7;font-size:13px;margin-bottom:12px;max-width:660px;text-align:center}
+  #wrap{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
+  #stage{position:relative;width:460px;height:340px;background:linear-gradient(#101d33,#070d18);border-radius:14px;overflow:hidden;border:2px solid rgba(95,146,214,.25)}
+  .shroom{position:absolute;width:28px;height:32px}
+  .shroom.bloomed .cap{filter:drop-shadow(0 0 9px #59f2e2)}
+  #fly{position:absolute;left:0;top:0;width:26px;height:18px;z-index:3}
+  #glow{position:absolute;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,rgba(255,240,160,.35),transparent 70%);display:none;pointer-events:none;z-index:2}
+  .hero{position:absolute;width:56px;height:56px;left:24px;top:262px}
+  @keyframes clap{0%,100%{transform:rotate(0)}25%{transform:rotate(-8deg)}75%{transform:rotate(8deg)}}
+  .hero.clap{animation:clap .4s ease 4}
+  #banner{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(4,10,20,.6);font-size:22px;font-weight:700;color:#ffd166;text-align:center;z-index:5}
+  #panel{width:300px;background:#12202f;border-radius:14px;padding:12px}
+  label{font-size:12px;color:#8fa8c7}
+  textarea{width:100%;box-sizing:border-box;background:#0a1420;color:#d8ecf5;border:1px solid rgba(95,146,214,.4);border-radius:8px;font-family:ui-monospace,monospace;font-size:13px;padding:8px;margin:6px 0}
+  button{background:#5f92d6;border:none;color:#081320;font-weight:700;padding:8px 14px;border-radius:8px;cursor:pointer;margin-right:6px}
+  button.ghost{background:#243a4e;color:#cde}
+  #readout{margin-top:10px;font-size:13px;color:#9fe8e2}
+  #status{margin-top:6px;font-size:13px;min-height:36px;color:#ffd166;line-height:1.4}
+  .hint{font-size:12px;color:#6f8aa8;margin-top:8px;line-height:1.45}
+  a.back{color:#55708a;font-size:12px;display:block;margin-top:10px}
+</style>
+</head>
+<body>
+<h1>Firefly Lamplighter</h1>
+<div class="sub">Five glow-mushrooms sleep in the dark garden. Pip's firefly friend will fly any patrol she hums —
+<b>looped forever</b>. Mushrooms charge only while the firefly hovers, glowing, nearby.</div>
+<div id="wrap">
+  <div id="stage">
+    <div id="glow"></div>
+    <div id="fly">
+      <svg viewBox="0 0 26 18" width="26" height="18">
+        <ellipse cx="6" cy="7" rx="5" ry="3.4" fill="rgba(180,220,255,.55)"/>
+        <ellipse cx="6" cy="11" rx="5" ry="3.4" fill="rgba(180,220,255,.35)"/>
+        <ellipse cx="14" cy="9" rx="7" ry="5" fill="#c9a227"/>
+        <circle id="lamp" cx="20" cy="9" r="3.4" fill="#5c4d1c"/>
+      </svg>
+    </div>
+    <div class="hero" id="hero">
+      <svg viewBox="0 0 64 64" width="56" height="56">
+        <line x1="32" y1="12" x2="32" y2="21" stroke="#1d9a8f" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="32" cy="9" r="4.5" fill="#ffd166"/>
+        <ellipse cx="32" cy="37" rx="16" ry="18" fill="#2ec4b6"/>
+        <ellipse cx="32" cy="45" rx="9" ry="8.5" fill="#d8f5f2"/>
+        <circle cx="25" cy="31" r="6.5" fill="#fff"/>
+        <circle cx="39" cy="31" r="6.5" fill="#fff"/>
+        <circle cx="26.5" cy="32.5" r="3" fill="#073b4c"/>
+        <circle cx="40.5" cy="32.5" r="3" fill="#073b4c"/>
+        <ellipse cx="24" cy="56" rx="6" ry="3.5" fill="#ef8354"/>
+        <ellipse cx="40" cy="56" rx="6" ry="3.5" fill="#ef8354"/>
+      </svg>
+    </div>
+    <div id="banner"></div>
+  </div>
+  <div id="panel">
+    <label>Patrol hum — lines: <b>go x y</b> · <b>glow sec</b> · <b>wait sec</b> (loops forever)</label>
+    <textarea id="program" rows="5">go 400 40
+glow 1
+wait 1</textarea>
+    <button id="runBtn">Run</button><button id="resetBtn" class="ghost">Reset</button>
+    <div id="readout">—</div>
+    <div id="status">Press Run. The firefly obeys literally — watch where the light actually lands.</div>
+    <div class="hint">Charge ring = mushroom cap brightening. A mushroom needs about 2s of nearby glow. The firefly never improvises; it only loops what you hummed.</div>
+    <a class="back" href="../index.html">← portal</a>
+  </div>
+</div>
+<script>
+const stage=document.getElementById('stage'), glowEl=document.getElementById('glow'),
+      flyEl=document.getElementById('fly'), lamp=document.getElementById('lamp'),
+      hero=document.getElementById('hero'), readout=document.getElementById('readout'),
+      statusEl=document.getElementById('status'), banner=document.getElementById('banner'),
+      program=document.getElementById('program');
+const SH=[[120,90],[210,150],[90,200],[300,210],[330,100]];
+const shrooms=SH.map(([x,y])=>{
+  const el=document.createElement('div'); el.className='shroom';
+  el.style.left=(x-14)+'px'; el.style.top=(y-16)+'px';
+  el.innerHTML='<svg viewBox="0 0 28 32" width="28" height="32"><rect x="12" y="14" width="5" height="16" rx="2" fill="#cfe3d0"/><path class="cap" d="M1 16 Q14 -4 27 16 Z" fill="#5a6b70"/></svg>';
+  stage.appendChild(el);
+  return {el,x,y,charge:0,bloomed:false,cap:el.querySelector('.cap')};
+});
+const SPEED=95, RADIUS=60, CHARGE_TIME=2, TMAX=30;
+let cmds=[], ci=0, timer=0, running=false, raf=null, lastTs=0, t=0;
+let fx=70, fy=250, glowing=false;
+
+function parseProgram(){
+  cmds=[];
+  for(const ln of program.value.split('\n')){
+    const p=ln.trim().split(/[\s,]+/);
+    if(!p[0]) continue;
+    if(p[0]==='go' && p.length>=3 && !isNaN(+p[1]) && !isNaN(+p[2])) cmds.push({op:'go',x:+p[1],y:+p[2]});
+    else if((p[0]==='glow'||p[0]==='wait') && !isNaN(+p[1])) cmds.push({op:p[0],dur:+p[1]});
+  }
+}
+function mix(c1,c2,f){
+  const a=parseInt(c1.slice(1),16), b=parseInt(c2.slice(1),16);
+  const r=Math.round(((a>>16)&255)*(1-f)+((b>>16)&255)*f),
+        g=Math.round(((a>>8)&255)*(1-f)+((b>>8)&255)*f),
+        bl=Math.round((a&255)*(1-f)+(b&255)*f);
+  return `rgb(${r},${g},${bl})`;
+}
+function frame(ts){
+  if(!running) return;
+  const dt=Math.min(0.05,(ts-lastTs)/1000||0); lastTs=ts; t+=dt;
+  if(cmds.length){
+    const c=cmds[ci];
+    if(c.op==='go'){
+      const dx=c.x-fx, dy=c.y-fy, d=Math.hypot(dx,dy);
+      if(d<4){ci=(ci+1)%cmds.length;}
+      else{fx+=dx/d*SPEED*dt; fy+=dy/d*SPEED*dt;}
+      glowing=false;
+    }else{
+      glowing=(c.op==='glow');
+      c.dur-=dt;
+      if(c.dur<=0){cmds[ci]={op:c.op,dur:c.orig}; ci=(ci+1)%cmds.length;}
+    }
+  }
+  if(glowing){
+    for(const s of shrooms){
+      if(!s.bloomed && Math.hypot(fx-s.x,fy-s.y)<RADIUS){
+        s.charge=Math.min(1,s.charge+dt/CHARGE_TIME);
+        if(s.charge>=1){s.bloomed=true; s.el.classList.add('bloomed');}
+      }
+    }
+  }
+  render();
+  if(shrooms.every(s=>s.bloomed)){end(true,'Every mushroom is awake — the garden glows!');return;}
+  if(t>=TMAX){end(false,'The firefly danced its loop… and the garden slept through it. Where did the light actually land?');return;}
+  raf=requestAnimationFrame(frame);
+}
+function render(){
+  flyEl.style.transform=`translate(${fx-13}px, ${fy-9}px)`;
+  glowEl.style.display=glowing?'block':'none';
+  glowEl.style.left=(fx-60)+'px'; glowEl.style.top=(fy-60)+'px';
+  lamp.setAttribute('fill', glowing?'#fff3b0':'#5c4d1c');
+  for(const s of shrooms){
+    s.cap.setAttribute('fill', s.bloomed?'#59f2e2':mix('#5a6b70','#59f2e2',s.charge));
+  }
+  const awake=shrooms.filter(s=>s.bloomed).length;
+  readout.textContent=`t=${t.toFixed(1)}s · ${awake}/5 mushrooms awake · firefly ${glowing?'glowing':'dark'}`;
+}
+function end(win,msg){
+  running=false; cancelAnimationFrame(raf); statusEl.textContent=msg;
+  if(win){banner.style.display='flex'; banner.textContent='✨ The garden wakes up! ✨'; hero.classList.add('clap');}
+}
+function reset(){
+  running=false; cancelAnimationFrame(raf);
+  t=0; fx=70; fy=250; glowing=false; ci=0;
+  for(const s of shrooms){s.charge=0; s.bloomed=false; s.el.classList.remove('bloomed');}
+  banner.style.display='none'; hero.classList.remove('clap');
+  render(); readout.textContent='—';
+}
+document.getElementById('runBtn').onclick=()=>{
+  reset(); parseProgram();
+  if(!cmds.length){statusEl.textContent='No hummable lines found. Try: go 120 90 / glow 2'; return;}
+  cmds.forEach(c=>{if(c.op!=='go') c.orig=c.dur;});
+  running=true; lastTs=performance.now();
+  statusEl.textContent='The firefly loops your hum, faithfully and without judgment…';
+  raf=requestAnimationFrame(frame);
+};
+document.getElementById('resetBtn').onclick=()=>{reset(); statusEl.textContent='Press Run. The firefly obeys literally — watch where the light actually lands.';};
+reset();
+</script>
+</body>
+</html>

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Prism Burrow — demo-06</title>
+<style>
+  body{margin:0;font-family:'Segoe UI',system-ui,sans-serif;background:#1c1f2b;color:#eef0f7;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:14px;box-sizing:border-box}
+  h1{font-size:20px;margin:4px 0 2px}
+  .sub{color:#a8b0d6;font-size:13px;margin-bottom:12px;max-width:680px;text-align:center}
+  #wrap{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
+  #stage{position:relative;width:460px;height:300px;background:linear-gradient(#272c42,#12141f);border-radius:14px;overflow:hidden;border:2px solid rgba(255,209,102,.25)}
+  #floor{position:absolute;left:0;right:0;bottom:0;height:80px;background:#2f3550;border-top:3px solid #454d75}
+  .socket{position:absolute;width:44px;height:44px;border-radius:50%;background:#1a1e30;border:3px dashed #454d75;top:128px}
+  .seg{position:absolute;height:6px;top:147px;background:#2a2f48;border-radius:3px;transition:background .15s, box-shadow .15s}
+  #pulse{position:absolute;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 0 16px #fff;top:143px;left:33px;display:none;z-index:4}
+  .flowerPlaced{position:absolute;width:28px;height:28px;opacity:0;transition:opacity .2s;z-index:3}
+  @keyframes pop{0%{transform:scale(.2)}70%{transform:scale(1.25)}100%{transform:scale(1)}}
+  .flowerPlaced.show{opacity:1;animation:pop .3s ease}
+  #gateDoor{position:absolute;left:400px;top:110px;width:38px;height:80px;background:#3d4468;border:3px solid #5a6494;border-radius:8px 8px 0 0;transition:transform .8s;z-index:2}
+  #gateGlow{position:absolute;left:400px;top:110px;width:38px;height:80px;background:radial-gradient(circle,#ffe8a3,#ffd16677 60%,transparent);opacity:0;transition:opacity .6s;z-index:1}
+  #gateDoor.open{transform:translateY(-84px)}
+  #gateDoor.nope{animation:shake .4s ease}
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+  #recv{position:absolute;left:408px;top:88px;width:22px;height:22px;border-radius:50%;background:#2a2f48;border:2px solid #5a6494;z-index:3}
+  .hero{position:absolute;width:56px;height:56px;left:0;top:0;z-index:5}
+  #banner{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(14,16,26,.6);font-size:21px;font-weight:700;color:#ffd166;text-align:center;z-index:6;padding:20px}
+  #panel{width:310px;background:#22263a;border-radius:14px;padding:12px}
+  label{font-size:12px;color:#a8b0d6}
+  select{background:#141828;color:#e2e6f5;border:1px solid rgba(255,209,102,.4);border-radius:6px;padding:5px;font-size:12px;margin-right:4px}
+  button{background:#ffd166;border:none;color:#33260a;font-weight:700;padding:8px 14px;border-radius:8px;cursor:pointer;margin-right:6px}
+  button.ghost{background:#3a4060;color:#e2e6f5}
+  .legend{font-size:12px;color:#c9cfec;background:#181c2e;border-radius:8px;padding:8px;margin-top:10px;line-height:1.55}
+  #status{margin-top:8px;font-size:13px;min-height:36px;color:#ffd166;line-height:1.4}
+  .hint{font-size:12px;color:#8a91b8;margin-top:8px;line-height:1.45}
+  a.back{color:#6f77a0;font-size:12px;display:block;margin-top:10px}
+</style>
+</head>
+<body>
+<h1>The Prism Burrow</h1>
+<div class="sub">An ember-<b style="color:#ff5964">red</b> beam enters from the left crystal; the gate drinks only
+<b style="color:#ffd166">gold</b>. Pip replants the three transformer flowers into sockets — <b>socket order is the program</b>.</div>
+<div id="wrap">
+  <div id="stage">
+    <svg style="position:absolute;left:14px;top:126px" width="52" height="52" viewBox="0 0 52 52">
+      <polygon points="26,4 44,26 26,48 8,26" fill="#ff5964" stroke="#ff8a92" stroke-width="2"/>
+      <polygon points="26,14 36,26 26,38 16,26" fill="#ff8a92"/>
+    </svg>
+    <div class="seg" id="seg0" style="left:66px;width:52px"></div>
+    <div class="seg" id="seg1" style="left:184px;width:34px"></div>
+    <div class="seg" id="seg2" style="left:284px;width:34px"></div>
+    <div class="seg" id="seg3" style="left:384px;width:14px"></div>
+    <div class="socket" style="left:118px"></div>
+    <div class="socket" style="left:218px"></div>
+    <div class="socket" style="left:318px"></div>
+    <div class="flowerPlaced" id="fp0" style="left:126px;top:122px"></div>
+    <div class="flowerPlaced" id="fp1" style="left:226px;top:122px"></div>
+    <div class="flowerPlaced" id="fp2" style="left:326px;top:122px"></div>
+    <div id="pulse"></div>
+    <div id="gateGlow"></div>
+    <div id="gateDoor"></div>
+    <div id="recv"></div>
+    <div class="hero" id="hero">
+      <svg viewBox="0 0 64 64" width="56" height="56">
+        <line x1="32" y1="12" x2="32" y2="21" stroke="#1d9a8f" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="32" cy="9" r="4.5" fill="#ffd166"/>
+        <ellipse cx="32" cy="37" rx="16" ry="18" fill="#2ec4b6"/>
+        <ellipse cx="32" cy="45" rx="9" ry="8.5" fill="#d8f5f2"/>
+        <circle cx="25" cy="31" r="6.5" fill="#fff"/>
+        <circle cx="39" cy="31" r="6.5" fill="#fff"/>
+        <circle cx="26.5" cy="32.5" r="3" fill="#073b4c"/>
+        <circle cx="40.5" cy="32.5" r="3" fill="#073b4c"/>
+        <ellipse cx="24" cy="56" rx="6" ry="3.5" fill="#ef8354"/>
+        <ellipse cx="40" cy="56" rx="6" ry="3.5" fill="#ef8354"/>
+      </svg>
+    </div>
+    <div id="floor"></div>
+    <div id="banner"></div>
+  </div>
+  <div id="panel">
+    <label>Socket 1</label> <select id="slot0"><option value="ember">Ember</option><option value="mint">Mint</option><option value="sun">Sun</option></select>
+    <label>Socket 2</label> <select id="slot1"><option value="mint">Mint</option><option value="ember">Ember</option><option value="sun">Sun</option></select>
+    <label>Socket 3</label> <select id="slot2"><option value="sun">Sun</option><option value="ember">Ember</option><option value="mint">Mint</option></select>
+    <div style="margin-top:8px">
+      <button id="runBtn">Run</button><button id="resetBtn" class="ghost">Reset</button>
+    </div>
+    <div class="legend">
+      <b>Flower laws</b> (other colors pass through):<br>
+      🌼 <b style="color:#ef8354">Ember</b>: red ↔ blue<br>
+      🌼 <b style="color:#95d5b2">Mint</b>: blue ↔ gold<br>
+      🌼 <b style="color:#ffd166">Sun</b>: red ↔ gold
+    </div>
+    <div id="status">Press Run. Pip plants the flowers, then the beam tells the truth, segment by segment.</div>
+    <div class="hint">Default order (Ember→Mint→Sun) <i>almost</i> works — watch where gold turns back to red. Six permutations exist; at least two are golden.</div>
+    <a class="back" href="../index.html">← portal</a>
+  </div>
+</div>
+<script>
+const T={
+  ember:{red:'blue', blue:'red',  gold:'gold'},
+  mint: {red:'red',  blue:'gold', gold:'blue'},
+  sun:  {red:'gold', blue:'blue', gold:'red'}
+};
+const COL={red:'#ff5964', blue:'#4cc9f0', gold:'#ffd166'};
+const PETAL={ember:'#ef8354', mint:'#95d5b2', sun:'#ffd166'};
+const SOCKX=[140,240,340], HERO_Y=164, HER0=40;
+const segs=[0,1,2,3].map(i=>document.getElementById('seg'+i));
+const fps=[0,1,2].map(i=>document.getElementById('fp'+i));
+const slots=[0,1,2].map(i=>document.getElementById('slot'+i));
+const pulse=document.getElementById('pulse'), hero=document.getElementById('hero'),
+      gateDoor=document.getElementById('gateDoor'), gateGlow=document.getElementById('gateGlow'),
+      recv=document.getElementById('recv'), statusEl=document.getElementById('status'),
+      banner=document.getElementById('banner');
+let running=false, raf=null, startTs=0, chain=[], placed=[false,false,false];
+
+function flowerSVG(kind){
+  const c=PETAL[kind];
+  let petals='';
+  for(let k=0;k<5;k++){
+    const a=k/5*Math.PI*2-Math.PI/2;
+    petals+=`<circle cx="${14+Math.cos(a)*7}" cy="${14+Math.sin(a)*7}" r="4.6" fill="${c}"/>`;
+  }
+  return `<svg viewBox="0 0 28 28" width="28" height="28">${petals}<circle cx="14" cy="14" r="4" fill="#fff8dc"/></svg>`;
+}
+function lightSeg(i,color){segs[i].style.background=color; segs[i].style.boxShadow=`0 0 12px ${color}`;}
+function dimSeg(i){segs[i].style.background='#2a2f48'; segs[i].style.boxShadow='none';}
+function frame(ts){
+  if(!running) return;
+  const e=(ts-startTs)/1000;
+  // Phase 1: Pip hops to each socket and plants (0 - 0.9s)
+  let hx=HER0;
+  for(let k=0;k<3;k++){
+    const t0=k*0.3, from=(k===0?HER0:SOCKX[k-1]);
+    if(e>=t0+0.3){hx=SOCKX[k]; if(!placed[k]){placed[k]=true; fps[k].innerHTML=flowerSVG(chain[k]); fps[k].classList.add('show');}}
+    else if(e>=t0){const f=(e-t0)/0.3; hx=from+(SOCKX[k]-from)*f; break;}
+  }
+  hero.style.transform=`translate(${hx-28}px, ${HERO_Y}px)`;
+  // Phase 2: the beam pulse (1.0 - 2.4s)
+  if(e>=1.0 && e<2.4){
+    pulse.style.display='block';
+    const px=40+360*(e-1.0)/1.4;
+    pulse.style.left=(px-7)+'px';
+    lightSeg(0,COL[chain[0]? 'red':'red']);
+    if(px>=SOCKX[0]) lightSeg(1,COL[colors[1]]);
+    if(px>=SOCKX[1]) lightSeg(2,COL[colors[2]]);
+    if(px>=SOCKX[2]) lightSeg(3,COL[colors[3]]);
+  }
+  // Phase 3: verdict (2.5s)
+  if(e>=2.5){
+    pulse.style.display='none';
+    const finalColor=colors[3];
+    recv.style.background=COL[finalColor];
+    if(finalColor==='gold'){
+      gateDoor.classList.add('open'); gateGlow.style.opacity='1';
+      banner.style.display='flex'; banner.textContent='💛 The gate drinks the gold light!';
+      statusEl.textContent='Gold delivered. The burrow hums approvingly.';
+    }else{
+      gateDoor.classList.add('nope');
+      statusEl.textContent=`The gate received ${finalColor} — it only drinks gold. Trace the colored segments to find where the beam turned.`;
+    }
+    running=false; return;
+  }
+  raf=requestAnimationFrame(frame);
+}
+let colors=[];
+function reset(){
+  running=false; cancelAnimationFrame(raf);
+  placed=[false,false,false];
+  fps.forEach(f=>{f.classList.remove('show'); f.innerHTML='';});
+  for(let i=0;i<4;i++) dimSeg(i);
+  pulse.style.display='none';
+  gateDoor.classList.remove('open','nope'); gateGlow.style.opacity='0';
+  recv.style.background='#2a2f48';
+  banner.style.display='none';
+  hero.style.transform=`translate(${HER0-28}px, ${HERO_Y}px)`;
+}
+document.getElementById('runBtn').onclick=()=>{
+  reset();
+  chain=slots.map(s=>s.value);
+  if(new Set(chain).size<3){statusEl.textContent='Each flower must sit in exactly one socket — no clones in the basket.'; return;}
+  colors=['red'];
+  for(const f of chain) colors.push(T[f][colors[colors.length-1]]);
+  running=true; startTs=performance.now();
+  statusEl.textContent='Pip plants the flowers… then the beam tells the truth.';
+  raf=requestAnimationFrame(frame);
+};
+document.getElementById('resetBtn').onclick=()=>{reset(); statusEl.textContent='Press Run. Pip plants the flowers, then the beam tells the truth, segment by segment.';};
+reset();
+</script>
+</body>
+</html>

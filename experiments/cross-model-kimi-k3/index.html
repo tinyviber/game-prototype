@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cross-Model Exploration — kimi-k3</title>
+<style>
+  body{margin:0;font-family:'Segoe UI',system-ui,sans-serif;background:#0f2027;color:#eaf6f5;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:24px;box-sizing:border-box}
+  h1{font-size:24px;margin:8px 0 2px}
+  .sub{color:#8fc7c2;font-size:13px;margin-bottom:18px;text-align:center;max-width:620px}
+  .hero{animation:bob 2.2s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+  #grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;max-width:760px;width:100%}
+  a.card{display:block;background:#122e37;border:1px solid rgba(46,196,182,.3);border-radius:12px;padding:14px;text-decoration:none;color:#eaf6f5;transition:transform .15s,border-color .15s}
+  a.card:hover{transform:translateY(-3px);border-color:#2ec4b6}
+  .tag{display:inline-block;font-size:11px;color:#06252b;background:#ffd166;border-radius:6px;padding:2px 7px;font-weight:700;margin-bottom:6px}
+  .name{font-weight:700;margin-bottom:4px}
+  .blurb{font-size:12px;color:#8fc7c2;line-height:1.45}
+  .foot{margin-top:18px;font-size:11px;color:#557f8a}
+</style>
+</head>
+<body>
+  <div class="hero">
+    <svg viewBox="0 0 64 64" width="72" height="72">
+      <line x1="32" y1="12" x2="32" y2="21" stroke="#1d9a8f" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="32" cy="9" r="4.5" fill="#ffd166"/>
+      <ellipse cx="32" cy="37" rx="16" ry="18" fill="#2ec4b6"/>
+      <ellipse cx="32" cy="45" rx="9" ry="8.5" fill="#d8f5f2"/>
+      <circle cx="25" cy="31" r="6.5" fill="#fff"/>
+      <circle cx="39" cy="31" r="6.5" fill="#fff"/>
+      <circle cx="26.5" cy="32.5" r="3" fill="#073b4c"/>
+      <circle cx="40.5" cy="32.5" r="3" fill="#073b4c"/>
+      <ellipse cx="24" cy="56" rx="6" ry="3.5" fill="#ef8354"/>
+      <ellipse cx="40" cy="56" rx="6" ry="3.5" fill="#ef8354"/>
+    </svg>
+  </div>
+  <h1>Six Puzzles for Pip</h1>
+  <div class="sub">Cross-model blind exploration · MODEL_LABEL = kimi-k3 ·
+  Every demo starts with a plausible-but-wrong program. Press Run, watch the world disagree, fix the program.</div>
+  <div id="grid">
+    <a class="card" href="demo-01/index.html"><span class="tag">A · Law Mutation</span><div class="name">Gravity Dial Hollow</div><div class="blurb">Write the hollow's gravity law over time so a float-pod lingers at three thirsty moss bands.</div></a>
+    <a class="card" href="demo-02/index.html"><span class="tag">B · Delegation</span><div class="name">Firefly Lamplighter</div><div class="blurb">Hum a looping patrol to a firefly so five glow-mushrooms charge and bloom.</div></a>
+    <a class="card" href="demo-03/index.html"><span class="tag">C · Temporal Echo</span><div class="name">Echo Twin Waltz</div><div class="blurb">One timeline, played twice with an offset, must hold two plates at the same time.</div></a>
+    <a class="card" href="demo-04/index.html"><span class="tag">D · Sensor Networks</span><div class="name">Mole Sensor Greenhouse</div><div class="blurb">Two honest sensor moles, four secretive soil beds. Wire rules, not guesses.</div></a>
+    <a class="card" href="demo-05/index.html"><span class="tag">E · Ecology</span><div class="name">The Ladybug Ledger</div><div class="blurb">Spend a lantern of 16 ladybugs across 24 days of aphid boom-bust.</div></a>
+    <a class="card" href="demo-06/index.html"><span class="tag">F · Wiring</span><div class="name">The Prism Burrow</div><div class="blurb">Socket three transformer flowers so an ember-red beam arrives gold.</div></a>
+  </div>
+  <div class="foot">Design docs: IDEAS.md · DIRECTIONS.md · DISCERNMENT.md — review form inside.</div>
+</body>
+</html>
