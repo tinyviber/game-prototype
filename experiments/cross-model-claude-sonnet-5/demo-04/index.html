@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Blind Cave Fish Sensor Network — demo-04</title>
+<style>
+  :root { --panel:#fffaf0; --ink:#2c2a26; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: linear-gradient(#20242e, #4b5563 40%, #fdf6e3 40%);
+    color: var(--ink); min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; padding: 20px 16px 60px;
+  }
+  h1 { font-size: 22px; margin: 4px 0 2px; color: #fff; }
+  .subtitle { font-size: 13px; opacity: .85; margin-bottom: 14px; text-align: center; max-width: 620px; color: #eee; }
+
+  .stage { display: flex; gap: 22px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+
+  .cave {
+    background: #14171f; border-radius: 18px; padding: 22px; width: 260px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.5), inset 0 0 40px rgba(0,0,0,.6);
+    color: #cbd5e1; text-align: center;
+  }
+  .cave h2 { font-size: 13px; color: #94a3b8; margin: 0 0 14px; letter-spacing: .5px; }
+  .sensor-light {
+    width: 60px; height: 60px; border-radius: 50%; margin: 0 auto 10px; background: #2a2f3a;
+    display: flex; align-items: center; justify-content: center; font-size: 24px;
+    box-shadow: inset 0 0 8px rgba(0,0,0,.6); transition: background .2s, box-shadow .2s;
+  }
+  .sensor-light.on { background: #f97316; box-shadow: 0 0 24px 6px rgba(249,115,22,.8); }
+  .sensor-label { font-size: 12px; margin-bottom: 18px; }
+  .tick-badge { font-size: 11px; opacity: .7; }
+
+  .door-box {
+    background: #241f14; border-radius: 18px; padding: 22px; width: 240px; color: #f5deb3;
+    box-shadow: 0 6px 24px rgba(0,0,0,.4);
+  }
+  .door-box h2 { font-size: 13px; color: #d7b26a; margin: 0 0 14px; }
+  .door-visual {
+    width: 100%; height: 90px; border-radius: 10px; margin-bottom: 10px;
+    display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700;
+    transition: background .3s;
+  }
+  .door-visual.open { background: #14532d; color: #86efac; }
+  .door-visual.closed { background: #450a0a; color: #fca5a5; }
+
+  .panel { background: var(--panel); border-radius: 18px; padding: 18px; width: 320px; box-shadow: 0 6px 18px rgba(0,0,0,.2); }
+  .panel h2 { font-size: 15px; margin: 0 0 10px; }
+  .formula-row { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 10px; flex-wrap: wrap; }
+  .formula-row label { display: flex; align-items: center; gap: 4px; background: #f4ede0; padding: 6px 10px; border-radius: 8px; }
+  .formula-text { font-family: "SFMono-Regular", Menlo, monospace; font-size: 13px; background: #14171f; color: #7dd3fc; padding: 8px 10px; border-radius: 8px; margin-bottom: 12px; }
+  button.action { border: none; padding: 9px 14px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; width: 100%; margin-bottom: 8px; }
+  #grabBtn { background: #e6c96f; color: #4a3200; }
+  #grabBtn.done { background: #cfe8d8; color: #1f5e3a; }
+  #crossBtn { background: #3f8fae; color: white; }
+  #resetBtn { background: #e0e0e0; color: #333; }
+  #log { margin-top: 10px; font-size: 12px; min-height: 70px; max-height: 130px; overflow-y: auto; background: #f1f5f9; border-radius: 10px; padding: 10px; line-height: 1.5; }
+  a.back { font-size: 12px; margin-top: 20px; color: #dbe4ff; }
+</style>
+</head>
+<body>
+
+<h1>🦇 Blind Cave Fish Sensor Network</h1>
+<p class="subtitle">You cannot see into the cavern. Only a motion sensor reports anything at all. Wire the sensor logic correctly before you trust the door.</p>
+
+<div class="stage">
+  <div class="cave">
+    <h2>UNSEEN CAVERN</h2>
+    <div class="sensor-light" id="sensorLight">💤</div>
+    <div class="sensor-label">Sensor S1: <b id="sensorState">quiet</b></div>
+    <div class="tick-badge">tick <span id="tickNum">0</span> / 8 (loops)</div>
+  </div>
+
+  <div class="door-box">
+    <h2>EXIT DOOR</h2>
+    <div class="door-visual closed" id="doorVisual">CLOSED</div>
+    <div style="font-size:11px;opacity:.75;">Door state is only as correct as your wiring below.</div>
+  </div>
+
+  <div class="panel">
+    <h2>Door Wiring</h2>
+    <div class="formula-row">
+      <label><input type="checkbox" id="notToggle"> invert sensor (NOT S1)</label>
+    </div>
+    <div class="formula-row">
+      <label><input type="checkbox" id="useTreasure" checked> require Treasure Collected (AND)</label>
+    </div>
+    <div class="formula-text" id="formulaText">Door Opens When: S1</div>
+    <button class="action" id="grabBtn">💎 Grab Treasure (safe alcove)</button>
+    <button class="action" id="crossBtn">🚶 Cross Now</button>
+    <button class="action" id="resetBtn">↺ Reset Run</button>
+    <div id="log">The cavern is dark. Watch the sensor, trust your wiring, and cross when you believe it's safe.</div>
+  </div>
+</div>
+
+<a class="back" href="../index.html">← back to launcher</a>
+
+<script>
+// Fixed, deterministic 8-tick bear schedule (ground truth, never rendered directly).
+const BEAR_AT_EXIT = [false,false,true,false,false,true,false,false]; // index = tick-1
+
+const sensorLight = document.getElementById("sensorLight");
+const sensorState = document.getElementById("sensorState");
+const tickNumEl = document.getElementById("tickNum");
+const doorVisual = document.getElementById("doorVisual");
+const formulaText = document.getElementById("formulaText");
+const notToggle = document.getElementById("notToggle");
+const useTreasure = document.getElementById("useTreasure");
+const grabBtn = document.getElementById("grabBtn");
+const crossBtn = document.getElementById("crossBtn");
+const resetBtn = document.getElementById("resetBtn");
+const logEl = document.getElementById("log");
+
+let tick = 0;
+let treasureCollected = false;
+let won = false;
+let timer = null;
+
+function updateFormulaText(){
+  const notPart = notToggle.checked ? "NOT(S1)" : "S1";
+  const treasurePart = useTreasure.checked ? " AND Treasure" : "";
+  formulaText.textContent = "Door Opens When: " + notPart + treasurePart;
+}
+
+function computeDoorOpen(sensorOn){
+  let base = notToggle.checked ? !sensorOn : sensorOn;
+  if (useTreasure.checked) base = base && treasureCollected;
+  return base;
+}
+
+function tickForward(){
+  tick = (tick % BEAR_AT_EXIT.length) + 1;
+  tickNumEl.textContent = tick;
+  const sensorOn = BEAR_AT_EXIT[tick-1];
+
+  sensorLight.classList.toggle("on", sensorOn);
+  sensorLight.textContent = sensorOn ? "⚠️" : "💤";
+  sensorState.textContent = sensorOn ? "TRIGGERED" : "quiet";
+
+  const doorOpen = computeDoorOpen(sensorOn);
+  doorVisual.className = "door-visual " + (doorOpen ? "open" : "closed");
+  doorVisual.textContent = doorOpen ? "OPEN" : "CLOSED";
+}
+
+notToggle.addEventListener("change", updateFormulaText);
+useTreasure.addEventListener("change", updateFormulaText);
+
+grabBtn.addEventListener("click", () => {
+  treasureCollected = true;
+  grabBtn.classList.add("done");
+  grabBtn.textContent = "💎 Treasure secured";
+  logEl.innerHTML += "You quietly grab the treasure from the lit alcove — always safe. <br>";
+  logEl.scrollTop = logEl.scrollHeight;
+});
+
+crossBtn.addEventListener("click", () => {
+  if (won) return;
+  const sensorOnNow = BEAR_AT_EXIT[tick-1];
+  const doorOpenNow = computeDoorOpen(sensorOnNow);
+
+  if (!doorOpenNow){
+    logEl.innerHTML += `Tick ${tick}: the door reads CLOSED — you wait. <br>`;
+  } else if (sensorOnNow){
+    logEl.innerHTML += `Tick ${tick}: the door said OPEN — but the bear was right there! You get scared back. ❌ Your wiring is unsafe.<br>`;
+  } else if (!treasureCollected && useTreasure.checked){
+    logEl.innerHTML += `Tick ${tick}: it's actually clear, but you forgot the treasure! Go back for it.<br>`;
+  } else {
+    logEl.innerHTML += `Tick ${tick}: the cavern was truly clear — you cross safely with the treasure. ✅ Solved!<br>`;
+    won = true;
+    clearInterval(timer);
+  }
+  logEl.scrollTop = logEl.scrollHeight;
+});
+
+resetBtn.addEventListener("click", () => {
+  tick = 0;
+  treasureCollected = false;
+  won = false;
+  grabBtn.classList.remove("done");
+  grabBtn.textContent = "💎 Grab Treasure (safe alcove)";
+  logEl.textContent = "The cavern is dark. Watch the sensor, trust your wiring, and cross when you believe it's safe.";
+  clearInterval(timer);
+  timer = setInterval(tickForward, 900);
+  tickForward();
+});
+
+updateFormulaText();
+timer = setInterval(tickForward, 900);
+tickForward();
+</script>
+</body>
+</html>

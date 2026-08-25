@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cross-Model Exploration — claude-sonnet-5</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: linear-gradient(#dfe9ff, #fdf6e3);
+    color: #2c2a26; min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; padding: 40px 16px 60px;
+  }
+  h1 { font-size: 26px; margin: 0 0 4px; text-align: center; }
+  .sub { font-size: 14px; opacity: .7; margin-bottom: 8px; text-align: center; max-width: 640px; }
+  .pip-hero { margin: 14px 0 24px; }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 18px; max-width: 900px; width: 100%;
+  }
+  .card {
+    background: #fffaf0; border-radius: 16px; padding: 18px; text-decoration: none; color: inherit;
+    box-shadow: 0 4px 14px rgba(0,0,0,.08); transition: transform .15s, box-shadow .15s;
+    display: block;
+  }
+  .card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.14); }
+  .card .num { font-size: 11px; font-weight: 700; opacity: .5; letter-spacing: 1px; }
+  .card h2 { font-size: 17px; margin: 4px 0 6px; }
+  .card p { font-size: 12.5px; opacity: .75; line-height: 1.4; margin: 0; }
+  .vector-tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #e3ecff; color: #2f4a8f; margin-top: 8px; }
+  footer { margin-top: 40px; font-size: 12px; opacity: .6; text-align: center; }
+  a.doc-link { color: #567; }
+</style>
+</head>
+<body>
+
+<h1>Cross-Model Blind Exploration</h1>
+<div class="sub">MODEL_LABEL: <b>claude-sonnet-5</b> — six independently-designed programming puzzle prototypes, each drawing from a distinct systemic archetype. See <a class="doc-link" href="IDEAS.md">IDEAS.md</a> and <a class="doc-link" href="DIRECTIONS.md">DIRECTIONS.md</a> for the full ideation and selection process.</div>
+
+<svg class="pip-hero" viewBox="0 0 64 64" width="72" height="72">
+  <ellipse cx="32" cy="38" rx="20" ry="18" fill="#5ec9a8" stroke="#2f7a63" stroke-width="2"/>
+  <line x1="32" y1="20" x2="36" y2="8" stroke="#2f7a63" stroke-width="2"/>
+  <circle cx="36" cy="8" r="4" fill="#ffe28a" stroke="#2f7a63" stroke-width="2"/>
+  <circle cx="24" cy="34" r="7" fill="#fff"/><circle cx="40" cy="34" r="7" fill="#fff"/>
+  <circle cx="25" cy="35" r="3.2" fill="#20303a"/><circle cx="41" cy="35" r="3.2" fill="#20303a"/>
+  <ellipse cx="18" cy="50" rx="5" ry="7" fill="#5ec9a8" stroke="#2f7a63" stroke-width="2"/>
+  <ellipse cx="46" cy="50" rx="5" ry="7" fill="#5ec9a8" stroke="#2f7a63" stroke-width="2"/>
+</svg>
+
+<div class="grid">
+  <a class="card" href="demo-01/index.html">
+    <div class="num">DEMO 01</div>
+    <h2>🌱 Gravity Well Gardener</h2>
+    <p>Author a timeline of gravity-direction changes; a vine grows one cell per tick along the current law, bending around rocks only when the law itself changes.</p>
+    <span class="vector-tag">Vector A · Law Mutation</span>
+  </a>
+  <a class="card" href="demo-02/index.html">
+    <div class="num">DEMO 02</div>
+    <h2>🪖 Windup Sentries</h2>
+    <p>Program a repeating patrol loop, wind up the soldier, and step back completely while a known crow schedule tries to slip past.</p>
+    <span class="vector-tag">Vector B · Delegation</span>
+  </a>
+  <a class="card" href="demo-03/index.html">
+    <div class="num">DEMO 03</div>
+    <h2>⏳ Echo Chamber Bridge</h2>
+    <p>Two parallel programs — your recorded Echo and your live self — race on one shared clock. The gate opens only if both press on the identical tick.</p>
+    <span class="vector-tag">Vector C · Temporal Echoes</span>
+  </a>
+  <a class="card" href="demo-04/index.html">
+    <div class="num">DEMO 04</div>
+    <h2>🦇 Blind Cave Fish Sensor Network</h2>
+    <p>You can never see the cave-bear directly — only a motion sensor. Wire NOT/AND logic correctly before you trust the exit door.</p>
+    <span class="vector-tag">Vector D · Sensor Networks</span>
+  </a>
+  <a class="card" href="demo-05/index.html">
+    <div class="num">DEMO 05</div>
+    <h2>🪷 Pond Algae Equilibrium</h2>
+    <p>Set a standing feeding rule for a nutrient valve and watch 24 simulated days unfold — success means staying balanced, not reaching a finish line.</p>
+    <span class="vector-tag">Vector E · Flux Systems</span>
+  </a>
+  <a class="card" href="demo-06/index.html">
+    <div class="num">DEMO 06</div>
+    <h2>🤖 Circuit Golem Innards</h2>
+    <p>Open the golem's chest and rewire its crossed eye-to-arm connections — you're debugging its own body, not commanding it from outside.</p>
+    <span class="vector-tag">Vector F · State Wiring</span>
+  </a>
+</div>
+
+<footer>
+  All six prototypes are zero-dependency single-file HTML/JS/CSS. See each demo's DESIGN.md for its architectural breakdown, and <a class="doc-link" href="DISCERNMENT.md">DISCERNMENT.md</a> for the human review template.
+</footer>
+
+</body>
+</html>

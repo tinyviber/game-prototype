@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Windup Sentries — demo-02</title>
+<style>
+  :root { --panel:#fffaf0; --ink:#2c2a26; --brass:#c9a24b; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: linear-gradient(#cfe8ff, #fdf6e3);
+    color: var(--ink); min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; padding: 20px 16px 60px;
+  }
+  h1 { font-size: 22px; margin: 4px 0 2px; }
+  .subtitle { font-size: 13px; opacity: .75; margin-bottom: 14px; text-align: center; max-width: 600px; }
+  .schedule {
+    display: flex; gap: 8px; margin-bottom: 14px; background: var(--panel);
+    padding: 10px 14px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,.06);
+  }
+  .sched-item {
+    display: flex; flex-direction: column; align-items: center; font-size: 11px; gap: 2px;
+    background: #f4ede0; border-radius: 8px; padding: 6px 8px; min-width: 46px;
+  }
+  .sched-item.active { background: #ffe3a8; }
+  .sched-item.done-save { background: #d3f2dc; }
+  .sched-item.done-lost { background: #f8d2ca; }
+  .sched-item b { font-size: 13px; }
+
+  .stage-wrap { background: var(--panel); border-radius: 18px; padding: 18px; box-shadow: 0 6px 18px rgba(0,0,0,.08); }
+  .fence {
+    position: relative;
+    display: grid; grid-template-columns: repeat(5, 70px);
+    background: #eaf7ff; border-radius: 12px; padding: 10px; gap: 4px;
+  }
+  .lane { display: flex; flex-direction: column; align-items: center; height: 130px; position: relative; }
+  .crow-slot { height: 46px; display: flex; align-items: center; justify-content: center; font-size: 26px; }
+  .rail { width: 100%; height: 4px; background: #b48b52; border-radius: 2px; margin: 4px 0; }
+  .berry { font-size: 24px; }
+  .berry.gone { opacity: .15; }
+  .col-num { font-size: 10px; opacity: .5; }
+
+  #soldier {
+    position: absolute; top: 46px; width: 70px; height: 40px;
+    display: flex; align-items: center; justify-content: center;
+    transition: left .4s ease;
+  }
+
+  .panel { background: var(--panel); border-radius: 18px; padding: 16px 18px; width: 320px; box-shadow: 0 6px 18px rgba(0,0,0,.08); }
+  .panel h2 { font-size: 15px; margin: 0 0 10px; }
+  .loop-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .chip {
+    background: #f4ede0; border-radius: 8px; padding: 6px 8px; font-size: 12px;
+    display: flex; align-items: center; gap: 4px; cursor: default;
+  }
+  .chip select { font-size: 12px; border-radius: 5px; border: 1px solid #d8c9ab; }
+  .chip button { border: none; background: #e6b8ac; color: #6b1f10; border-radius: 5px; width: 18px; height: 18px; cursor: pointer; font-size: 10px; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  button.action { border: none; padding: 9px 14px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  #addChip { background: #cfe8d8; color: #1f5e3a; }
+  #runBtn { background: #3f8fae; color: white; }
+  #resetBtn { background: #e0e0e0; color: #333; }
+  #log { margin-top: 12px; font-size: 12px; min-height: 90px; max-height: 140px; overflow-y: auto; padding: 10px; border-radius: 10px; background: #f1f5f9; line-height: 1.5; }
+  #summary { margin-top: 8px; font-weight: 700; font-size: 13px; }
+  .stage { display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+  a.back { font-size: 12px; margin-top: 20px; color: #567; }
+</style>
+</head>
+<body>
+
+<h1>🪖 Windup Sentries</h1>
+<p class="subtitle">Program a repeating patrol loop, wind up the soldier, and step back. You already know exactly when and where every crow will strike below — but once it's running, you cannot touch it again.</p>
+
+<div class="schedule" id="schedule"></div>
+
+<div class="stage">
+  <div class="stage-wrap">
+    <div class="fence" id="fence">
+      <div id="soldier">
+        <svg viewBox="0 0 64 64" width="34" height="34">
+          <ellipse cx="32" cy="38" rx="20" ry="18" fill="#5ec9a8" stroke="#2f7a63" stroke-width="2"/>
+          <line x1="32" y1="20" x2="36" y2="8" stroke="#2f7a63" stroke-width="2"/>
+          <circle cx="36" cy="8" r="4" fill="#ffe28a" stroke="#2f7a63" stroke-width="2"/>
+          <circle cx="24" cy="34" r="7" fill="#fff"/><circle cx="40" cy="34" r="7" fill="#fff"/>
+          <circle cx="25" cy="35" r="3.2" fill="#20303a"/><circle cx="41" cy="35" r="3.2" fill="#20303a"/>
+          <ellipse cx="18" cy="50" rx="5" ry="7" fill="#5ec9a8" stroke="#2f7a63" stroke-width="2"/>
+          <ellipse cx="46" cy="50" rx="5" ry="7" fill="#5ec9a8" stroke="#2f7a63" stroke-width="2"/>
+        </svg>
+      </div>
+      <!-- lanes injected by JS -->
+    </div>
+    <div style="text-align:center;font-size:11px;opacity:.7;margin-top:8px;">This wind-up soldier stands in for Pip while Pip is away.</div>
+  </div>
+
+  <div class="panel">
+    <h2>Patrol Loop (repeats forever)</h2>
+    <div class="loop-strip" id="loopStrip"></div>
+    <div class="controls">
+      <button class="action" id="addChip">+ Add move</button>
+      <button class="action" id="runBtn">🔑 Wind up &amp; Run</button>
+      <button class="action" id="resetBtn">↺ Reset</button>
+    </div>
+    <div id="log">Configure the loop, then wind it up. You get one shot per run.</div>
+    <div id="summary"></div>
+  </div>
+</div>
+
+<a class="back" href="../index.html">← back to launcher</a>
+
+<script>
+const COLS = 5;
+const START_COL = 2;
+const LANE_W = 70;
+const SCHEDULE = [
+  {tick:1, col:3},
+  {tick:2, col:4},
+  {tick:3, col:3},
+  {tick:4, col:2},
+  {tick:5, col:1},
+  {tick:6, col:0},
+];
+let loop = ["Right","Left","Right","Left"];
+
+const fenceEl = document.getElementById("fence");
+const soldierEl = document.getElementById("soldier");
+const loopStripEl = document.getElementById("loopStrip");
+const scheduleEl = document.getElementById("schedule");
+const logEl = document.getElementById("log");
+const summaryEl = document.getElementById("summary");
+
+let berries = SCHEDULE.length;
+
+function buildLanes(){
+  document.querySelectorAll(".lane").forEach(l => l.remove());
+  for (let c=0; c<COLS; c++){
+    const lane = document.createElement("div");
+    lane.className = "lane";
+    lane.style.gridColumn = (c+1);
+    lane.innerHTML = `
+      <div class="crow-slot" id="crow-${c}"></div>
+      <div class="rail"></div>
+      <div style="height:40px;"></div>
+      <div class="rail"></div>
+      <div class="berry" id="berry-${c}">🍓</div>
+      <div class="col-num">${c}</div>
+    `;
+    fenceEl.appendChild(lane);
+  }
+  soldierEl.style.left = (START_COL*LANE_W + 14) + "px";
+}
+
+function buildSchedulePreview(){
+  scheduleEl.innerHTML = "";
+  SCHEDULE.forEach((s, i) => {
+    const el = document.createElement("div");
+    el.className = "sched-item";
+    el.id = "sched-" + i;
+    el.innerHTML = `<span>T${s.tick}</span><b>col ${s.col}</b>`;
+    scheduleEl.appendChild(el);
+  });
+}
+
+function renderLoop(){
+  loopStripEl.innerHTML = "";
+  loop.forEach((mv, idx) => {
+    const chip = document.createElement("div");
+    chip.className = "chip";
+    const sel = document.createElement("select");
+    ["Left","Stay","Right"].forEach(m => {
+      const opt = document.createElement("option");
+      opt.value = m; opt.textContent = m;
+      if (mv === m) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener("change", () => { loop[idx] = sel.value; });
+    chip.appendChild(sel);
+    const del = document.createElement("button");
+    del.textContent = "✕";
+    del.addEventListener("click", () => { loop.splice(idx,1); renderLoop(); });
+    chip.appendChild(del);
+    loopStripEl.appendChild(chip);
+  });
+}
+
+document.getElementById("addChip").addEventListener("click", () => {
+  loop.push("Stay");
+  renderLoop();
+});
+
+document.getElementById("resetBtn").addEventListener("click", () => {
+  berries = SCHEDULE.length;
+  buildLanes();
+  buildSchedulePreview();
+  logEl.textContent = "Configure the loop, then wind it up. You get one shot per run.";
+  summaryEl.textContent = "";
+});
+
+let running = false;
+document.getElementById("runBtn").addEventListener("click", () => {
+  if (running || loop.length === 0) return;
+  running = true;
+  berries = SCHEDULE.length;
+  buildLanes();
+  buildSchedulePreview();
+  logEl.textContent = "";
+  summaryEl.textContent = "";
+  runPatrol();
+});
+
+function delay(ms){ return new Promise(res => setTimeout(res, ms)); }
+
+async function runPatrol(){
+  let col = START_COL;
+  let saved = 0, lost = 0;
+  const totalTicks = SCHEDULE[SCHEDULE.length-1].tick;
+
+  for (let tick=1; tick<=totalTicks; tick++){
+    const move = loop[(tick-1) % loop.length];
+    if (move === "Left") col = Math.max(0, col-1);
+    if (move === "Right") col = Math.min(COLS-1, col+1);
+    soldierEl.style.left = (col*LANE_W + 14) + "px";
+
+    const idx = SCHEDULE.findIndex(s => s.tick === tick);
+    if (idx >= 0){
+      const s = SCHEDULE[idx];
+      const schedCard = document.getElementById("sched-"+idx);
+      schedCard.classList.add("active");
+      const crowSlot = document.getElementById("crow-"+s.col);
+      crowSlot.textContent = "🐦";
+
+      await delay(350);
+
+      if (col === s.col){
+        saved++;
+        crowSlot.textContent = "💨";
+        schedCard.classList.add("done-save");
+        logEl.innerHTML += `T${tick}: soldier at col ${col} — crow scared off at col ${s.col}. ✅<br>`;
+      } else {
+        lost++;
+        berries = Math.max(0, berries-1);
+        crowSlot.textContent = "🐦🍓";
+        schedCard.classList.add("done-lost");
+        const anyBerry = document.querySelectorAll(".berry:not(.gone)");
+        if (anyBerry.length) anyBerry[0].classList.add("gone");
+        logEl.innerHTML += `T${tick}: soldier at col ${col}, crow struck at col ${s.col} — berry stolen! ❌<br>`;
+      }
+      logEl.scrollTop = logEl.scrollHeight;
+      await delay(300);
+      crowSlot.textContent = "";
+    } else {
+      await delay(650);
+    }
+  }
+
+  summaryEl.textContent = `Result: ${saved}/${SCHEDULE.length} berries saved, ${lost} lost.`;
+  running = false;
+}
+
+buildLanes();
+buildSchedulePreview();
+renderLoop();
+</script>
+</body>
+</html>

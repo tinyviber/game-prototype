@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gravity Well Gardener — demo-01</title>
+<style>
+  :root {
+    --soil: #7a5230;
+    --sky: #cdeeff;
+    --rock: #8a8f98;
+    --vine: #3fae6a;
+    --vine-dark: #2a7d4b;
+    --sun: #ffd35b;
+    --panel: #fffaf0;
+    --ink: #2c2a26;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: linear-gradient(#dff3ff, #fdf6e3);
+    color: var(--ink);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 16px 60px;
+  }
+  h1 { font-size: 22px; margin: 4px 0 2px; }
+  .subtitle { font-size: 13px; opacity: 0.75; margin-bottom: 14px; text-align: center; max-width: 560px; }
+  .stage {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  .garden-wrap {
+    background: var(--panel);
+    border-radius: 18px;
+    padding: 16px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  }
+  .pip-caption { text-align: center; font-size: 12px; opacity: 0.7; margin-top: 6px; }
+  .garden {
+    display: grid;
+    grid-template-columns: repeat(9, 40px);
+    grid-template-rows: repeat(7, 40px);
+    gap: 3px;
+    background: var(--sky);
+    padding: 8px;
+    border-radius: 12px;
+  }
+  .cell {
+    background: #eaf7ff;
+    border-radius: 6px;
+    position: relative;
+  }
+  .cell.soil { background: #e7d3b3; }
+  .cell.rock {
+    background: var(--rock);
+    box-shadow: inset 0 -4px 0 rgba(0,0,0,0.15);
+    border-radius: 8px;
+  }
+  .cell.goal {
+    background: #fff6d0;
+  }
+  .cell.goal::after {
+    content: "";
+    position: absolute; inset: 5px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #fff2a8, var(--sun));
+    box-shadow: 0 0 10px 2px rgba(255, 211, 91, 0.8);
+  }
+  .cell.seed::after {
+    content: "";
+    position: absolute; inset: 12px;
+    border-radius: 50%;
+    background: #6b3f1d;
+  }
+  .cell.vine {
+    background: #eaf7ff;
+  }
+  .cell.vine::after {
+    content: "";
+    position: absolute; inset: 9px;
+    border-radius: 50%;
+    background: var(--vine);
+    border: 2px solid var(--vine-dark);
+  }
+  .cell.vine-blocked::after {
+    background: #e2543f !important;
+    border-color: #a5321f !important;
+  }
+  .panel {
+    background: var(--panel);
+    border-radius: 18px;
+    padding: 16px 18px;
+    width: 340px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  }
+  .panel h2 { font-size: 15px; margin: 0 0 10px; }
+  .step-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    background: #f4ede0;
+    padding: 6px 8px;
+    border-radius: 10px;
+  }
+  .step-row span.tag {
+    font-size: 11px;
+    font-weight: 700;
+    color: #8a6d3b;
+    width: 62px;
+  }
+  select, input[type=number] {
+    font-size: 13px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    border: 1px solid #d8c9ab;
+    background: white;
+  }
+  input[type=number] { width: 52px; }
+  .step-row button {
+    margin-left: auto;
+    border: none;
+    background: #e6b8ac;
+    color: #6b1f10;
+    border-radius: 6px;
+    width: 24px; height: 24px;
+    cursor: pointer;
+    font-weight: 700;
+  }
+  .controls { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  button.action {
+    border: none;
+    padding: 9px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  #addStep { background: #cfe8d8; color: #1f5e3a; }
+  #runBtn { background: #3fae6a; color: white; }
+  #resetBtn { background: #e0e0e0; color: #333; }
+  #status {
+    margin-top: 12px;
+    font-size: 13px;
+    min-height: 40px;
+    padding: 10px;
+    border-radius: 10px;
+    background: #f1f5f9;
+    line-height: 1.4;
+  }
+  #status.fail { background: #fde2de; color: #8c2a1a; }
+  #status.success { background: #e0f6e6; color: #1c6b3a; }
+  .legend { font-size: 11px; opacity: 0.7; margin-top: 10px; }
+  a.back { font-size: 12px; margin-top: 20px; color: #567; }
+</style>
+</head>
+<body>
+
+<h1>🌱 Gravity Well Gardener</h1>
+<p class="subtitle">You don't move the vine — you rewrite the direction gravity points. Author a timeline of law-changes so the vine grows around the rock wall and reaches the sunlit patch.</p>
+
+<div class="stage">
+  <div class="garden-wrap">
+    <div id="garden" class="garden"></div>
+    <div class="pip-caption">Pip anchors the Gravity Rod at the edge of the plot.</div>
+    <svg viewBox="0 0 64 64" width="46" height="46" style="display:block;margin:8px auto 0;">
+      <ellipse cx="32" cy="38" rx="20" ry="18" fill="#5ec9a8" stroke="#2f7a63" stroke-width="2"/>
+      <line x1="32" y1="20" x2="36" y2="8" stroke="#2f7a63" stroke-width="2"/>
+      <circle id="antennaTip" cx="36" cy="8" r="4" fill="#ffe28a" stroke="#2f7a63" stroke-width="2"/>
+      <circle cx="24" cy="34" r="7" fill="#fff"/>
+      <circle cx="40" cy="34" r="7" fill="#fff"/>
+      <circle cx="25" cy="35" r="3.2" fill="#20303a"/>
+      <circle cx="41" cy="35" r="3.2" fill="#20303a"/>
+      <ellipse cx="18" cy="50" rx="5" ry="7" fill="#5ec9a8" stroke="#2f7a63" stroke-width="2"/>
+      <ellipse cx="46" cy="50" rx="5" ry="7" fill="#5ec9a8" stroke="#2f7a63" stroke-width="2"/>
+    </svg>
+  </div>
+
+  <div class="panel">
+    <h2>Gravity Law Timeline</h2>
+    <div id="steps"></div>
+    <div class="controls">
+      <button class="action" id="addStep">+ Add step</button>
+      <button class="action" id="runBtn">▶ Run</button>
+      <button class="action" id="resetBtn">↺ Reset</button>
+    </div>
+    <div id="status">Press Run to grow the vine under the current law timeline.</div>
+    <div class="legend">Rocks block growth. If the next cell under the current law is a rock or out of bounds, the vine stops permanently for this run.</div>
+  </div>
+</div>
+
+<a class="back" href="../index.html">← back to launcher</a>
+
+<script>
+const COLS = 9, ROWS = 7;
+const START = {c:1, r:1};
+const GOAL = {c:7, r:5};
+const ROCKS = new Set(["4,1","4,2","4,3","4,4"]);
+
+const DIRS = {
+  down:  {dc:0, dr:1},
+  up:    {dc:0, dr:-1},
+  left:  {dc:-1, dr:0},
+  right: {dc:1, dr:0},
+};
+
+let program = [
+  {dir:"down", ticks:3},
+  {dir:"right", ticks:4},
+  {dir:"up", ticks:2},
+];
+
+const gardenEl = document.getElementById("garden");
+const stepsEl = document.getElementById("steps");
+const statusEl = document.getElementById("status");
+const antennaTip = document.getElementById("antennaTip");
+
+function key(c,r){ return c+","+r; }
+
+function buildGrid(){
+  gardenEl.innerHTML = "";
+  for (let r=0; r<ROWS; r++){
+    for (let c=0; c<COLS; c++){
+      const cell = document.createElement("div");
+      cell.className = "cell soil";
+      cell.id = "cell-"+c+"-"+r;
+      if (ROCKS.has(key(c,r))) cell.classList.add("rock");
+      if (c===START.c && r===START.r) cell.classList.add("seed");
+      if (c===GOAL.c && r===GOAL.r) cell.classList.add("goal");
+      gardenEl.appendChild(cell);
+    }
+  }
+}
+
+function renderSteps(){
+  stepsEl.innerHTML = "";
+  program.forEach((step, idx) => {
+    const row = document.createElement("div");
+    row.className = "step-row";
+
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    tag.textContent = "STEP " + (idx+1);
+    row.appendChild(tag);
+
+    const sel = document.createElement("select");
+    ["down","up","left","right"].forEach(d => {
+      const opt = document.createElement("option");
+      opt.value = d; opt.textContent = "SET_GRAVITY(" + d;
+      if (step.dir === d) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener("change", () => { step.dir = sel.value; });
+    row.appendChild(sel);
+
+    const num = document.createElement("input");
+    num.type = "number"; num.min = 1; num.max = 12; num.value = step.ticks;
+    num.addEventListener("change", () => {
+      step.ticks = Math.max(1, Math.min(12, parseInt(num.value)||1));
+      num.value = step.ticks;
+    });
+    row.appendChild(num);
+
+    const closeParen = document.createElement("span");
+    closeParen.textContent = ")";
+    closeParen.style.fontSize = "12px";
+    row.appendChild(closeParen);
+
+    const del = document.createElement("button");
+    del.textContent = "✕";
+    del.addEventListener("click", () => {
+      program.splice(idx,1);
+      renderSteps();
+    });
+    row.appendChild(del);
+
+    stepsEl.appendChild(row);
+  });
+}
+
+document.getElementById("addStep").addEventListener("click", () => {
+  program.push({dir:"right", ticks:1});
+  renderSteps();
+});
+
+document.getElementById("resetBtn").addEventListener("click", () => {
+  buildGrid();
+  statusEl.className = "";
+  statusEl.textContent = "Press Run to grow the vine under the current law timeline.";
+});
+
+let running = false;
+
+document.getElementById("runBtn").addEventListener("click", () => {
+  if (running) return;
+  running = true;
+  buildGrid();
+  statusEl.className = "";
+  statusEl.textContent = "Growing…";
+  runProgram();
+});
+
+function markVine(c,r,blocked){
+  const cell = document.getElementById("cell-"+c+"-"+r);
+  if (!cell) return;
+  cell.classList.add(blocked ? "vine-blocked" : "vine");
+}
+
+async function runProgram(){
+  let cur = {c: START.c, r: START.r};
+  const delay = ms => new Promise(res => setTimeout(res, ms));
+
+  for (const step of program){
+    const dir = DIRS[step.dir];
+    antennaTip.setAttribute("fill",
+      step.dir === "down" ? "#7fb6ff" :
+      step.dir === "up" ? "#ffb37f" :
+      step.dir === "left" ? "#c98bff" : "#ffe28a");
+
+    for (let t=0; t<step.ticks; t++){
+      const next = {c: cur.c + dir.dc, r: cur.r + dir.dr};
+      const outOfBounds = next.c < 0 || next.c >= COLS || next.r < 0 || next.r >= ROWS;
+      const isRock = ROCKS.has(key(next.c, next.r));
+
+      if (outOfBounds || isRock){
+        markVine(next.c, next.r, true);
+        statusEl.className = "fail";
+        statusEl.textContent = "⛔ Blocked! The vine hit " + (isRock ? "a rock" : "the garden wall") +
+          " at (" + next.c + "," + next.r + ") while gravity pointed \"" + step.dir + "\". Growth halted — adjust your timeline.";
+        running = false;
+        return;
+      }
+
+      cur = next;
+      markVine(cur.c, cur.r, false);
+      await delay(200);
+
+      if (cur.c === GOAL.c && cur.r === GOAL.r){
+        statusEl.className = "success";
+        statusEl.textContent = "☀️ The vine reached the sun! Law timeline confirmed.";
+        running = false;
+        return;
+      }
+    }
+  }
+
+  statusEl.className = "fail";
+  statusEl.textContent = "The timeline ran out before reaching the sun. Add more steps or lengthen existing ones.";
+  running = false;
+}
+
+buildGrid();
+renderSteps();
+</script>
+</body>
+</html>

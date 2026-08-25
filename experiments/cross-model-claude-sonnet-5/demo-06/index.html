@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Circuit Golem Innards — demo-06</title>
+<style>
+  :root { --panel:#fffaf0; --ink:#2c2a26; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: linear-gradient(#e6ded1, #fdf6e3);
+    color: var(--ink); min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; padding: 20px 16px 60px;
+  }
+  h1 { font-size: 22px; margin: 4px 0 2px; }
+  .subtitle { font-size: 13px; opacity: .75; margin-bottom: 14px; text-align: center; max-width: 640px; }
+  .stage { display: flex; gap: 22px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+
+  .golem-wrap { background: var(--panel); border-radius: 18px; padding: 20px; width: 340px; box-shadow: 0 6px 18px rgba(0,0,0,.08); text-align: center; }
+  .golem-body { position: relative; height: 220px; }
+  .eye { width: 40px; height: 40px; border-radius: 50%; background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 18px; position: absolute; top: 10px; transition: background .2s, box-shadow .2s; }
+  .eye.left { left: 40px; } .eye.right { right: 40px; }
+  .eye.active { background: #f97316; box-shadow: 0 0 14px 4px rgba(249,115,22,.7); }
+  .arm { width: 60px; height: 16px; border-radius: 8px; background: #9aa5b1; position: absolute; top: 90px; transition: transform .3s, background .3s; }
+  .arm.left { left: -10px; transform-origin: right center; }
+  .arm.right { right: -10px; transform-origin: left center; }
+  .arm.raised { background: #3fae6a; }
+  .arm.left.raised { transform: rotate(-55deg); }
+  .arm.right.raised { transform: rotate(55deg); }
+  .torso { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); width: 110px; height: 110px; background: #b7bfc9; border-radius: 16px; display:flex; align-items:center; justify-content:center; font-size: 34px; }
+  .gate-slot { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); font-size: 12px; opacity: .7; width: 100%; }
+  .approach-label { position: absolute; top: 190px; width: 100%; text-align: center; font-size: 12px; }
+  .visitor-left, .visitor-right, .visitor-center { position: absolute; top: 55px; font-size: 26px; opacity: 0; transition: opacity .3s; }
+  .visitor-left { left: -30px; } .visitor-right { right: -30px; } .visitor-center { left: 50%; transform: translateX(-50%); top: 120px; }
+  .visitor-left.show, .visitor-right.show, .visitor-center.show { opacity: 1; }
+
+  .panel { background: var(--panel); border-radius: 18px; padding: 18px; width: 320px; box-shadow: 0 6px 18px rgba(0,0,0,.08); }
+  .panel h2 { font-size: 15px; margin: 0 0 12px; }
+  .wire-row { font-size: 13px; background: #f4ede0; padding: 8px 10px; border-radius: 8px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  select { font-size: 13px; padding: 3px 6px; border-radius: 6px; border: 1px solid #d8c9ab; }
+  .override-row { font-size: 12px; display: flex; align-items: center; gap: 6px; margin: 10px 0; }
+  button.action { border: none; padding: 9px 14px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; margin-right: 8px; margin-top: 6px; }
+  #runBtn { background: #6d5fce; color: white; }
+  #resetBtn { background: #e0e0e0; color: #333; }
+  #log { margin-top: 10px; font-size: 12px; min-height: 90px; max-height: 150px; overflow-y: auto; background: #f1f5f9; border-radius: 10px; padding: 10px; line-height: 1.5; }
+  #tally { font-weight: 700; margin-top: 8px; font-size: 13px; }
+  a.back { font-size: 12px; margin-top: 20px; color: #567; }
+</style>
+</head>
+<body>
+
+<h1>🤖 Circuit Golem Innards</h1>
+<p class="subtitle">The golem's chest is open. Its wires are currently crossed. Rewire which eye drives which arm before the next patrol sequence runs.</p>
+
+<div class="stage">
+  <div class="golem-wrap">
+    <div class="golem-body">
+      <div class="eye left" id="eyeL">👁️</div>
+      <div class="eye right" id="eyeR">👁️</div>
+      <div class="torso">🛡️</div>
+      <div class="arm left" id="armL"></div>
+      <div class="arm right" id="armR"></div>
+      <div class="visitor-left" id="visL">🦊</div>
+      <div class="visitor-right" id="visR">🦊</div>
+      <div class="visitor-center" id="visC">🐣</div>
+      <div class="approach-label" id="approachLabel"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Internal Wiring</h2>
+    <div class="wire-row">
+      Left Arm raises when:
+      <select id="leftArmSrc">
+        <option value="R">Right Eye</option>
+        <option value="L">Left Eye</option>
+      </select>
+    </div>
+    <div class="wire-row">
+      Right Arm raises when:
+      <select id="rightArmSrc">
+        <option value="L">Left Eye</option>
+        <option value="R">Right Eye</option>
+      </select>
+    </div>
+    <div class="override-row">
+      <input type="checkbox" id="overrideAlways"> keep both arms always raised (override wiring)
+    </div>
+    <button class="action" id="runBtn">▶ Run Patrol Sequence</button>
+    <button class="action" id="resetBtn">↺ Reset</button>
+    <div id="log">Configure the wiring, then run the sequence: 2 intruders, 1 ally crossing, twice.</div>
+    <div id="tally"></div>
+  </div>
+</div>
+
+<a class="back" href="../index.html">← back to launcher</a>
+
+<script>
+const SEQUENCE = [
+  {tick:1, type:"intruder", side:"left"},
+  {tick:2, type:"intruder", side:"right"},
+  {tick:3, type:"ally", side:"center"},
+  {tick:4, type:"intruder", side:"left"},
+  {tick:5, type:"intruder", side:"right"},
+  {tick:6, type:"ally", side:"center"},
+];
+
+const leftArmSrc = document.getElementById("leftArmSrc");
+const rightArmSrc = document.getElementById("rightArmSrc");
+const overrideAlways = document.getElementById("overrideAlways");
+const eyeL = document.getElementById("eyeL");
+const eyeR = document.getElementById("eyeR");
+const armL = document.getElementById("armL");
+const armR = document.getElementById("armR");
+const visL = document.getElementById("visL");
+const visR = document.getElementById("visR");
+const visC = document.getElementById("visC");
+const approachLabel = document.getElementById("approachLabel");
+const logEl = document.getElementById("log");
+const tallyEl = document.getElementById("tally");
+
+// Default wiring is intentionally crossed: Left Arm <- Right Eye, Right Arm <- Left Eye.
+leftArmSrc.value = "R";
+rightArmSrc.value = "L";
+
+function resetVisual(){
+  eyeL.classList.remove("active");
+  eyeR.classList.remove("active");
+  armL.classList.remove("raised");
+  armR.classList.remove("raised");
+  visL.classList.remove("show");
+  visR.classList.remove("show");
+  visC.classList.remove("show");
+  approachLabel.textContent = "";
+  logEl.textContent = "Configure the wiring, then run the sequence: 2 intruders, 1 ally crossing, twice.";
+  tallyEl.textContent = "";
+}
+
+document.getElementById("resetBtn").addEventListener("click", resetVisual);
+
+function delay(ms){ return new Promise(res => setTimeout(res, ms)); }
+
+let running = false;
+document.getElementById("runBtn").addEventListener("click", () => {
+  if (running) return;
+  running = true;
+  resetVisual();
+  logEl.textContent = "";
+  runSequence();
+});
+
+async function runSequence(){
+  let successes = 0, failures = 0;
+  const forced = overrideAlways.checked;
+
+  for (const event of SEQUENCE){
+    const leftEyeActive = event.type === "intruder" && event.side === "left";
+    const rightEyeActive = event.type === "intruder" && event.side === "right";
+
+    eyeL.classList.toggle("active", leftEyeActive);
+    eyeR.classList.toggle("active", rightEyeActive);
+
+    let leftArmRaised, rightArmRaised;
+    if (forced){
+      leftArmRaised = true; rightArmRaised = true;
+    } else {
+      leftArmRaised = (leftArmSrc.value === "L") ? leftEyeActive : rightEyeActive;
+      rightArmRaised = (rightArmSrc.value === "L") ? leftEyeActive : rightEyeActive;
+    }
+    armL.classList.toggle("raised", leftArmRaised);
+    armR.classList.toggle("raised", rightArmRaised);
+
+    visL.classList.remove("show"); visR.classList.remove("show"); visC.classList.remove("show");
+    if (event.type === "intruder" && event.side === "left"){ visL.classList.add("show"); approachLabel.textContent = "Fox approaches from the LEFT"; }
+    if (event.type === "intruder" && event.side === "right"){ visR.classList.add("show"); approachLabel.textContent = "Fox approaches from the RIGHT"; }
+    if (event.type === "ally"){ visC.classList.add("show"); approachLabel.textContent = "Pip's ally needs to cross the center gate"; }
+
+    await delay(650);
+
+    let line = `Tick ${event.tick}: `;
+    if (event.type === "intruder"){
+      const blocked = event.side === "left" ? leftArmRaised : rightArmRaised;
+      if (blocked){
+        successes++;
+        line += `intruder from ${event.side.toUpperCase()} — BLOCKED ✅`;
+      } else {
+        failures++;
+        line += `intruder from ${event.side.toUpperCase()} — GOT THROUGH ❌ (wrong arm raised)`;
+      }
+    } else {
+      const bothDown = !leftArmRaised && !rightArmRaised;
+      if (bothDown){
+        successes++;
+        line += `ally crosses the center gate safely ✅`;
+      } else {
+        failures++;
+        line += `ally BLOCKED by the golem's own raised arms ❌`;
+      }
+    }
+    logEl.innerHTML += line + "<br>";
+    logEl.scrollTop = logEl.scrollHeight;
+    await delay(250);
+  }
+
+  tallyEl.textContent = `Result: ${successes}/6 succeeded, ${failures}/6 failed.`;
+  approachLabel.textContent = "";
+  running = false;
+}
+
+resetVisual();
+</script>
+</body>
+</html>
