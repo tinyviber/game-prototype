@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cross the Shifted Bed</title>
+  <style>
+    :root { --ink:#20303a; --muted:#63757b; --paper:#f7f3e9; --water:#b9d9d5; --bank:#d9c99c; --safe:#7ba5a0; --loose:#d98a5c; --gap:#a8b7b2; --accent:#285e68; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:var(--paper); font:16px/1.4 system-ui,-apple-system,Segoe UI,sans-serif; }
+    main { max-width:900px; margin:0 auto; padding:28px 18px 42px; }
+    h1 { margin:0 0 4px; font-size:clamp(26px,5vw,42px); letter-spacing:-.03em; }
+    h2 { font-size:18px; margin:0 0 9px; }
+    p { margin:6px 0; }
+    .sub { color:var(--muted); max-width:650px; }
+    .panel { background:#fffdf7; border:1px solid #d8d3c5; border-radius:14px; padding:18px; margin-top:18px; box-shadow:0 4px 12px #283c3310; }
+    .legend { display:flex; flex-wrap:wrap; gap:10px 18px; color:var(--muted); font-size:13px; margin:14px 0 2px; }
+    .key { display:flex; align-items:center; gap:6px; }
+    .dot { width:15px; height:15px; border-radius:50%; display:inline-block; border:1px solid #58746e; }
+    .safe { background:var(--safe); } .loose { background:var(--loose); border-color:#a55633; } .gap { background:var(--gap); border-color:#899a95; }
+    .board-wrap { overflow:auto; padding-bottom:4px; }
+    .board { display:grid; grid-template-columns:76px repeat(5,minmax(70px,1fr)) 76px; min-width:520px; gap:7px; margin-top:15px; align-items:center; }
+    .bank { height:86px; display:flex; align-items:center; justify-content:center; text-align:center; background:var(--bank); border:1px solid #b8a56f; border-radius:10px; font-weight:700; font-size:13px; }
+    .cell { height:86px; background:var(--water); border-radius:10px; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; }
+    .stone { width:43px; height:30px; border-radius:48% 52% 45% 55%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff; box-shadow:0 3px 0 #0002; }
+    .cell small { color:#4e7472; font-size:11px; margin-top:5px; }
+    .hiker { position:absolute; z-index:2; font-size:28px; filter:drop-shadow(0 2px 0 #fff); transition:all .25s; }
+    .program { display:flex; flex-wrap:wrap; gap:8px; margin:13px 0 14px; }
+    .step { display:flex; flex-direction:column; gap:3px; color:var(--muted); font-size:12px; font-weight:700; }
+    select { border:2px solid #b7c5c0; border-radius:8px; padding:9px 8px; background:white; color:var(--ink); font-size:15px; cursor:pointer; }
+    select:focus { outline:3px solid #b9d9d5; border-color:var(--accent); }
+    button { border:0; border-radius:9px; padding:11px 18px; color:#fff; background:var(--accent); font-size:16px; font-weight:700; cursor:pointer; }
+    button:hover { background:#1e4d56; } button.secondary { background:#dfe8e3; color:var(--ink); margin-left:7px; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    #message { min-height:49px; margin-top:15px; padding:11px 13px; background:#eef3ed; border-left:4px solid var(--accent); border-radius:5px; }
+    .fail { background:#fff0e7 !important; border-color:var(--loose) !important; } .win { background:#e8f2df !important; border-color:#5c8b4a !important; }
+    .hint { color:var(--muted); font-size:14px; }
+    @media(max-width:600px){ main{padding:22px 12px;} .panel{padding:14px;} .board{gap:4px; grid-template-columns:62px repeat(5,70px) 62px;} }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Cross the shifted riverbed</h1>
+  <p class="sub">The river is dry, but the stones moved overnight. Plan one careful crossing for the hiker. A loose stone will not hold weight.</p>
+
+  <section class="panel" aria-labelledby="world-title">
+    <h2 id="world-title">The crossing</h2>
+    <p class="hint">Each row is a possible line across the bed. Your hiker advances one column per instruction.</p>
+    <div class="board-wrap"><div class="board" id="board" aria-label="Stepping stone crossing"></div></div>
+    <div class="legend"><span class="key"><i class="dot safe"></i> solid stone</span><span class="key"><i class="dot loose"></i> loose stone</span><span class="key"><i class="dot gap"></i> bare bed / gap</span></div>
+  </section>
+
+  <section class="panel" aria-labelledby="plan-title">
+    <h2 id="plan-title">Pack the crossing plan</h2>
+    <p class="hint">At every step, choose whether to stay in this row, move one row up, or move one row down. The plan is editable before you run it.</p>
+    <div class="program" id="program"></div>
+    <button id="run">Run plan</button><button id="reset" class="secondary">Reset</button>
+    <div id="message" role="status">Look at the stone pattern, then predict a safe five-step route.</div>
+  </section>
+</main>
+<script>
+  const rows = 3, cols = 5;
+  // 0 is top row. The shifted bed has two useful routes and one tempting loose stone.
+  const bed = [
+    ['gap','safe','safe','safe','safe'],
+    ['safe','safe','loose','gap','safe'],
+    ['safe','gap','safe','safe','gap']
+  ];
+  const labels = { safe:'solid', loose:'LOOSE', gap:'gap' };
+  let position = 1, currentCol = 0, running = false, timer;
+  const plan = ['stay','stay','stay','stay','stay'];
+  const board = document.getElementById('board'), program = document.getElementById('program'), message = document.getElementById('message');
+
+  function drawBoard() {
+    board.innerHTML = '';
+    const left = document.createElement('div'); left.className='bank'; left.textContent='START'; board.append(left);
+    for (let r=0;r<rows;r++) for (let c=0;c<cols;c++) {
+      const cell=document.createElement('div'); cell.className='cell';
+      const stone=document.createElement('div'); stone.className='stone '+bed[r][c]; stone.textContent=labels[bed[r][c]];
+      cell.append(stone);
+      if (c===0) { const n=document.createElement('small'); n.textContent='step 1'; cell.append(n); }
+      if (c===3) { const n=document.createElement('small'); n.textContent='step 4'; cell.append(n); }
+      if (r===position && c===currentCol && (running || currentCol===0)) { const h=document.createElement('span'); h.className='hiker'; h.textContent='🥾'; h.title='hiker'; cell.append(h); }
+      board.append(cell);
+    }
+    const right=document.createElement('div'); right.className='bank'; right.textContent='FAR BANK'; board.append(right);
+  }
+  function drawProgram() {
+    program.innerHTML='';
+    plan.forEach((value,i)=>{
+      const wrap=document.createElement('label'); wrap.className='step'; wrap.textContent='STEP '+(i+1);
+      const select=document.createElement('select'); select.setAttribute('aria-label','Step '+(i+1));
+      [['stay','Stay in row'],['up','Move up one row'],['down','Move down one row']].forEach(([v,t])=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; o.selected=v===value; select.append(o); });
+      select.onchange=()=>plan[i]=select.value; wrap.append(select); program.append(wrap);
+    });
+  }
+  function setMessage(text, kind='') { message.className=kind; message.textContent=text; }
+  function run() {
+    if (running) return; running=true; position=1; currentCol=0; drawBoard(); setMessage('The hiker is following your plan…'); document.getElementById('run').disabled=true;
+    let step=0;
+    timer=setInterval(()=>{
+      if(step>=cols){ clearInterval(timer); running=false; document.getElementById('run').disabled=false; currentCol=0; position=1; drawBoard(); setMessage('The far bank is reached. You used the visible pattern to route around the hazard — aha!', 'win'); return; }
+      const move=plan[step]; if(move==='up') position--; if(move==='down') position++; currentCol=step;
+      const col=step; const kind=position<0||position>=rows ? 'gap' : bed[position][col];
+      drawBoard();
+      if(kind==='loose'){ clearInterval(timer); running=false; document.getElementById('run').disabled=false; setMessage('Step '+(step+1)+': the hiker chose the loose stone and slips. Change that step, then try again.', 'fail'); return; }
+      if(kind==='gap'){ clearInterval(timer); running=false; document.getElementById('run').disabled=false; setMessage('Step '+(step+1)+': there is no stone in that row. The dry bed shows exactly where the route breaks. Repair the plan.', 'fail'); return; }
+      step++;
+    }, 520);
+  }
+  document.getElementById('run').onclick=run;
+  document.getElementById('reset').onclick=()=>{ if(timer)clearInterval(timer); running=false; position=1; currentCol=0; plan.fill('stay'); document.getElementById('run').disabled=false; drawBoard(); drawProgram(); setMessage('Plan cleared. Inspect the stones and choose a route.'); };
+  drawBoard(); drawProgram();
+</script>
+</body>
+</html>

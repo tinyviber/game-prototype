@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vent Watch</title>
+<style>
+  :root { --ink:#25231f; --paper:#f4efe3; --panel:#fffaf0; --line:#c9bda7; --red:#b94b35; --blue:#477b91; --green:#477653; --amber:#d18b35; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.4 system-ui, sans-serif; }
+  main { max-width:1050px; margin:0 auto; padding:24px; }
+  h1 { margin:0 0 4px; font:700 32px/1.1 Georgia, serif; }
+  h2 { font-size:18px; margin:0 0 10px; }
+  p { margin:5px 0; }
+  .sub { color:#655d50; margin-bottom:18px; }
+  .layout { display:grid; grid-template-columns:minmax(330px,1.25fr) minmax(280px,.75fr); gap:16px; align-items:start; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; box-shadow:0 2px 0 #dfd4c1; }
+  .shelter { position:relative; min-height:410px; overflow:hidden; background:#e5d6ba; border-color:#aa9474; }
+  .roof { position:absolute; left:11%; right:11%; top:34px; height:0; border-left:200px solid transparent; border-right:200px solid transparent; border-bottom:110px solid #735541; }
+  .wall { position:absolute; left:16%; right:16%; top:135px; bottom:52px; background:#b9895d; border:7px solid #654933; border-top:0; }
+  .floor { position:absolute; left:9%; right:9%; bottom:26px; height:30px; background:#8f6b4e; border-radius:50%; }
+  .label { position:absolute; background:#fffaf0e8; padding:3px 7px; border-radius:4px; font-size:12px; font-weight:700; }
+  .vent { position:absolute; top:165px; width:42px; height:70px; border:5px solid #4d443a; background:#aab3aa; border-radius:4px; z-index:2; }
+  .vent:after { content:""; position:absolute; inset:8px 12px; border-left:3px dotted #596057; border-right:3px dotted #596057; }
+  #vent0 { left:22%; } #vent1 { left:44%; } #vent2 { right:22%; }
+  .fire { position:absolute; z-index:3; left:calc(50% - 33px); bottom:70px; width:66px; height:58px; font-size:55px; text-align:center; line-height:1; filter:saturate(.85); }
+  .smoke { position:absolute; left:calc(50% - 16px); bottom:165px; font-size:30px; opacity:.25; }
+  .wind { position:absolute; z-index:5; top:245px; font-size:22px; color:var(--blue); transition:left .5s; }
+  .wind span { font-size:13px; display:block; text-align:center; font-weight:700; }
+  .status { position:absolute; left:16px; right:16px; bottom:10px; text-align:center; font-weight:700; }
+  .world-caption { margin-top:10px; color:#5d5547; font-size:14px; }
+  .bar { height:18px; background:#d9cdb7; border-radius:99px; overflow:hidden; border:1px solid #b7a78c; }
+  #heat { height:100%; width:45%; background:var(--red); transition:width .5s, background .5s; }
+  .meterline { display:flex; justify-content:space-between; font-size:13px; margin:7px 0 3px; }
+  .program { display:grid; gap:9px; }
+  .row { display:flex; align-items:center; gap:8px; }
+  .row label { width:65px; font-size:14px; font-weight:700; }
+  select { flex:1; min-width:0; padding:9px; border:1px solid #a99b86; border-radius:5px; background:white; font-size:15px; }
+  button { border:0; border-radius:6px; padding:10px 14px; color:white; background:#38654a; font-weight:700; cursor:pointer; font-size:15px; }
+  button:hover { background:#294c37; } button.secondary { background:#8a6941; }
+  .actions { display:flex; gap:8px; margin-top:13px; }
+  .notice { margin-top:14px; padding:10px; border-left:4px solid var(--amber); background:#f7e9c9; min-height:54px; }
+  .notice.good { border-color:var(--green); background:#e0eddf; } .notice.bad { border-color:var(--red); background:#f4ded6; }
+  .legend { display:flex; gap:12px; flex-wrap:wrap; font-size:13px; color:#5c554a; margin-top:10px; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:3px; background:var(--blue); }
+  @media(max-width:720px){ main{padding:14px}.layout{grid-template-columns:1fr}.shelter{min-height:350px}.roof{border-left-width:140px;border-right-width:140px} }
+</style>
+</head>
+<body>
+<main>
+  <h1>Vent Watch</h1>
+  <p class="sub">A cold night is coming. Keep the shelter’s little fire alive while the wind changes sides.</p>
+  <div class="layout">
+    <section class="card shelter" aria-label="Mountain shelter simulation">
+      <div class="roof"></div><div class="wall"></div><div class="floor"></div>
+      <div class="label" style="left:18%;top:140px">WEST</div><div class="label" style="right:18%;top:140px">EAST</div>
+      <div id="vent0" class="vent" title="west vent"></div><div id="vent1" class="vent" title="center vent"></div><div id="vent2" class="vent" title="east vent"></div>
+      <div id="wind" class="wind" style="left:18%">➜➜➜<span>wind</span></div>
+      <div id="smoke" class="smoke">♨</div><div id="fire" class="fire">🔥</div>
+      <div id="worldStatus" class="status">The fire is warming the shelter.</div>
+    </section>
+    <section>
+      <div class="card">
+        <h2>Warmth</h2>
+        <div class="meterline"><span>Fire strength</span><strong id="heatText">45%</strong></div>
+        <div class="bar"><div id="heat"></div></div>
+        <p class="world-caption">The gust reaches the open vents in order. Your watch must choose what happens at each gust.</p>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h2>Write the watch’s instructions</h2>
+        <p class="world-caption">At each gust, decide which vent to close. “Leave open” spends no action.</p>
+        <div class="program">
+          <div class="row"><label>Gust 1</label><select id="a0"><option value="none">Leave open</option><option value="west">Close west</option><option value="center">Close center</option><option value="east">Close east</option></select></div>
+          <div class="row"><label>Gust 2</label><select id="a1"><option value="none">Leave open</option><option value="west">Close west</option><option value="center">Close center</option><option value="east">Close east</option></select></div>
+          <div class="row"><label>Gust 3</label><select id="a2"><option value="none">Leave open</option><option value="west">Close west</option><option value="center">Close center</option><option value="east">Close east</option></select></div>
+        </div>
+        <div class="actions"><button id="run">Run watch</button><button id="reset" class="secondary">Reset</button></div>
+        <div id="notice" class="notice">Three gusts are coming. Predict which vent each one will punish.</div>
+      </div>
+      <div class="legend"><span><i class="dot"></i>gust path</span><span>♨ smoke shows draft</span><span>🔥 fire responds to your choices</span></div>
+    </section>
+  </div>
+</main>
+<script>
+  const gusts = ['west','east','center'];
+  const names = {west:'west', east:'east', center:'center'};
+  const $ = id => document.getElementById(id);
+  let heat = 45;
+  function setVisual(windSide, closed, final=false) {
+    const positions = {west:'18%', center:'45%', east:'68%'};
+    $('wind').style.left = positions[windSide];
+    ['west','center','east'].forEach((s,i)=>$(('vent'+i)).style.background = closed === s ? '#5e554b' : '#aab3aa');
+    $('smoke').style.left = positions[closed || windSide];
+    $('heat').style.width = heat + '%'; $('heatText').textContent = heat + '%';
+    $('heat').style.background = heat < 30 ? '#9e3c31' : heat < 55 ? '#d18b35' : '#477653';
+    $('fire').textContent = heat <= 0 ? '🪵' : heat < 30 ? '🕯️' : heat < 55 ? '🔥' : '🔥';
+    $('worldStatus').textContent = final ? (heat >= 70 ? 'The fire roars; the shelter is ready.' : heat > 0 ? 'The fire survives, but the shelter is cold.' : 'The fire has gone out.') : 'A gust is crossing the shelter…';
+  }
+  $('run').onclick = () => {
+    heat = 45; let i = 0; $('notice').className='notice'; $('notice').textContent='Watch running…';
+    const timer = setInterval(() => {
+      const side = gusts[i], choice = $('a'+i).value;
+      const protectedVent = choice === side;
+      heat += protectedVent ? 18 : (choice === 'none' ? -22 : -12);
+      heat = Math.max(0, Math.min(100, heat)); setVisual(side, choice === 'none' ? null : choice);
+      if (!protectedVent) $('notice').textContent = choice === 'none' ? 'The '+names[side]+' vent took the gust. The fire drops.' : 'You closed '+choice+', but the gust hit the '+names[side]+' vent.';
+      else $('notice').textContent = 'Good read: the '+names[side]+' vent was the gust’s target.';
+      i++;
+      if (i === gusts.length) { clearInterval(timer); setVisual(gusts[2], null, true); const good=heat>=70; $('notice').className='notice '+(good?'good':'bad'); $('notice').textContent = good ? 'The shelter is warm. The wind’s route was west → east → center.' : 'The fire is struggling. Study where each gust landed, then edit the watch and run again.'; }
+    }, 800);
+  };
+  $('reset').onclick = () => { heat=45; ['a0','a1','a2'].forEach(id=>$(id).value='none'); setVisual('west',null,true); $('notice').className='notice'; $('notice').textContent='Three gusts are coming. Predict which vent each one will punish.'; };
+  setVisual('west',null,true);
+</script>
+</body>
+</html>

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ferry Trim</title>
+  <style>
+    :root { --ink:#17324d; --muted:#60758a; --paper:#f7f2e8; --water:#bfe6ee; --red:#c94f43; --green:#2d805d; --left:#e7a24b; --right:#63a7be; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:linear-gradient(#dceff0 0 30%,#a9dbe3 30% 100%); font:16px/1.4 system-ui,-apple-system,sans-serif; }
+    main { max-width:900px; margin:0 auto; padding:26px 18px 42px; }
+    h1 { margin:0; font-size:clamp(28px,5vw,44px); letter-spacing:-1px; }
+    .sub { margin:4px 0 22px; color:#31536b; }
+    .layout { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(280px,.9fr); gap:18px; align-items:start; }
+    .card { background:rgba(255,253,247,.94); border:2px solid #d5cbb7; border-radius:16px; padding:18px; box-shadow:0 5px 0 rgba(45,91,104,.12); }
+    .world { overflow:hidden; }
+    .status { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:10px; }
+    .status strong { font-size:19px; }
+    #message { color:var(--muted); text-align:right; font-size:14px; }
+    .scene { background:var(--water); border-radius:12px; padding:16px 9px 10px; overflow:hidden; }
+    .ferry { width:86%; min-height:190px; margin:8px auto 0; background:#fdf9ec; border:4px solid var(--ink); border-radius:18px 18px 42px 42px; position:relative; transition:transform .45s ease; }
+    .ferry:before { content:""; position:absolute; top:34px; bottom:0; left:50%; border-left:2px dashed #9b8d78; }
+    .rail { position:absolute; top:14px; height:13px; width:43%; border:3px solid var(--ink); background:#d9eef0; }
+    .rail.left { left:3%; } .rail.right { right:3%; }
+    .cargo { position:absolute; bottom:20px; display:flex; flex-wrap:wrap; align-content:end; align-items:end; justify-content:center; gap:3px; width:45%; min-height:58px; }
+    .cargo.left { left:3%; } .cargo.right { right:3%; }
+    .crate { width:30px; height:30px; color:#fff; display:grid; place-items:center; font-weight:800; font-size:13px; border:2px solid #8c5621; border-radius:4px; background:var(--left); box-shadow:inset 0 -4px rgba(0,0,0,.12); }
+    .right .crate { background:var(--right); border-color:#2d687d; }
+    .dock { text-align:center; color:#31536b; margin:9px 0 0; font-size:13px; }
+    .weights { display:flex; justify-content:space-around; margin-top:12px; font-weight:700; }
+    .weights span:first-child { color:#a66521; } .weights span:last-child { color:#31758a; }
+    h2 { font-size:20px; margin:0 0 5px; }
+    .hint { color:var(--muted); font-size:14px; margin:0 0 14px; }
+    .program { display:grid; gap:8px; }
+    .row { display:flex; align-items:center; justify-content:space-between; gap:8px; background:#f1ecdf; border-radius:9px; padding:8px 9px; }
+    .crate-name { font-weight:700; min-width:105px; }
+    .buttons { display:flex; gap:5px; }
+    button { cursor:pointer; border:2px solid #a6b2b4; border-radius:7px; background:#fffdf7; color:var(--ink); padding:7px 10px; font:inherit; font-weight:700; }
+    button:hover { border-color:var(--ink); }
+    .dest.selected.left { background:var(--left); border-color:#a66521; color:#38230d; }
+    .dest.selected.right { background:var(--right); border-color:#31758a; color:#092d38; }
+    #run { width:100%; margin-top:14px; background:var(--ink); color:white; border-color:var(--ink); padding:11px; }
+    #reset { width:100%; margin-top:8px; background:transparent; }
+    .result { margin-top:15px; padding:11px 12px; border-radius:9px; background:#edf3ef; color:#285e47; min-height:45px; }
+    .result.bad { background:#fae9e5; color:#963e35; }
+    .legend { font-size:13px; color:var(--muted); margin-top:13px; }
+    @media (max-width:700px) { .layout { grid-template-columns:1fr; } .ferry { width:95%; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Ferry Trim</h1>
+  <p class="sub">The dock is crowded. Load every crate, keep the ferry from tipping, and leave with a level deck.</p>
+  <div class="layout">
+    <section class="card world" aria-label="Ferry world">
+      <div class="status"><strong id="phase">At the dock</strong><span id="message">Five crates are waiting.</span></div>
+      <div class="scene">
+        <div class="ferry" id="ferry">
+          <div class="rail left"></div><div class="rail right"></div>
+          <div class="cargo left" id="leftCargo"></div><div class="cargo right" id="rightCargo"></div>
+        </div>
+        <div class="dock">DOCK → &nbsp; crates come aboard in this order</div>
+      </div>
+      <div class="weights"><span>Port: <b id="leftWeight">0</b> kg</span><span>Starboard: <b id="rightWeight">0</b> kg</span></div>
+      <div class="legend">The deck can survive up to 5 kg of imbalance while loading. Departure requires equal weight.</div>
+    </section>
+    <section class="card">
+      <h2>Write the loading plan</h2>
+      <p class="hint">Choose which side receives each crate. The crew follows your plan from top to bottom.</p>
+      <div class="program" id="program"></div>
+      <button id="run">▶ Run loading plan</button>
+      <button id="reset">↺ Reset ferry</button>
+      <div id="result" class="result" aria-live="polite">Make a plan, then run it.</div>
+    </section>
+  </div>
+</main>
+<script>
+  const crates = [{name:'Red', weight:4}, {name:'Blue', weight:3}, {name:'Green', weight:2}, {name:'Yellow', weight:5}, {name:'White', weight:2}];
+  let plan = Array(crates.length).fill(null), running = false, timer;
+  const program = document.querySelector('#program'), leftCargo = document.querySelector('#leftCargo'), rightCargo = document.querySelector('#rightCargo');
+  const ferry = document.querySelector('#ferry'), phase = document.querySelector('#phase'), message = document.querySelector('#message'), result = document.querySelector('#result');
+  function drawProgram() {
+    program.innerHTML = crates.map((c,i) => `<div class="row"><span class="crate-name">${i+1}. ${c.name} crate <small>(${c.weight} kg)</small></span><span class="buttons"><button class="dest ${plan[i]==='L'?'selected left':''}" data-i="${i}" data-side="L">PORT ◀</button><button class="dest ${plan[i]==='R'?'selected right':''}" data-i="${i}" data-side="R">STARBOARD ▶</button></span></div>`).join('');
+    program.querySelectorAll('.dest').forEach(b => b.onclick=()=>{ if(!running){plan[+b.dataset.i]=b.dataset.side; drawProgram(); }});
+  }
+  function addCrate(i, side) { const c=crates[i], el=document.createElement('span'); el.className='crate'; el.textContent=c.weight; el.title=c.name+' crate'; (side==='L'?leftCargo:rightCargo).appendChild(el); }
+  function reset() { clearTimeout(timer); running=false; plan=Array(crates.length).fill(null); leftCargo.innerHTML=''; rightCargo.innerHTML=''; ferry.style.transform='rotate(0deg)'; phase.textContent='At the dock'; message.textContent='Five crates are waiting.'; result.className='result'; result.textContent='Make a plan, then run it.'; drawProgram(); }
+  function run() {
+    if(running) return; if(plan.includes(null)){ result.className='result bad'; result.textContent='The crew needs a side for every crate before loading.'; return; }
+    running=true; leftCargo.innerHTML=''; rightCargo.innerHTML=''; let i=0,l=0,r=0; phase.textContent='Loading…'; result.className='result'; result.textContent='Watch the deck after each crate.';
+    function step(){ if(i===crates.length){ running=false; phase.textContent='Ready to depart'; message.textContent='All crates are aboard.'; if(l===r){ result.textContent='Balanced! The ferry can depart safely.'; } else { result.className='result bad'; result.textContent=`Not ready: the ferry is ${Math.abs(l-r)} kg heavier on ${l>r?'port':'starboard'}. Repair the plan and try again.`; } return; }
+      const c=crates[i], s=plan[i]; if(s==='L')l+=c.weight; else r+=c.weight; addCrate(i,s); const diff=l-r; ferry.style.transform=`rotate(${Math.max(-8,Math.min(8,diff*0.75))}deg)`; message.textContent=`${c.name} crate aboard — ${Math.abs(diff)} kg${diff===0?' level':diff>0?' port-heavy':' starboard-heavy'}.`;
+      if(Math.abs(diff)>5){ running=false; phase.textContent='Tipping!'; result.className='result bad'; result.textContent=`The ${c.name} crate pushed the deck past its 5 kg limit. It tips toward ${diff>0?'port':'starboard'} at step ${i+1}; change an earlier destination.`; return; }
+      i++; timer=setTimeout(step,650);
+    } step();
+  }
+  document.querySelector('#run').onclick=run; document.querySelector('#reset').onclick=reset; drawProgram();
+</script>
+</body>
+</html>

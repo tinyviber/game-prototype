@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tidepool Water Run</title>
+<style>
+  :root { --ink:#173042; --muted:#547080; --sand:#f5efd9; --water:#bde9ef; --deep:#319bb0; --accent:#e47742; --good:#287f55; --bad:#b44b3d; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#dcecef; color:var(--ink); font:16px/1.4 system-ui,sans-serif; }
+  main { max-width:1050px; margin:auto; padding:20px; }
+  h1 { margin:0 0 4px; font-size:clamp(25px,4vw,38px); }
+  h2 { font-size:18px; margin:0 0 8px; }
+  .sub { margin:0 0 16px; color:var(--muted); }
+  .layout { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(270px,.8fr); gap:16px; }
+  .card { background:#fffdf5; border:2px solid #b8d0d1; border-radius:14px; padding:16px; box-shadow:0 3px 0 #c2d8d8; }
+  .scene { position:relative; overflow:hidden; min-height:450px; background:var(--sand); }
+  .sky { height:95px; background:#a9dfe4; border-radius:9px 9px 0 0; padding:14px; color:#2a6372; font-weight:650; }
+  .water { position:absolute; left:0; right:0; top:95px; bottom:0; background:repeating-linear-gradient(0deg,rgba(255,255,255,.2) 0 2px,transparent 2px 23px),var(--water); transition:background .3s; }
+  .water.risen { background:repeating-linear-gradient(0deg,rgba(255,255,255,.22) 0 2px,transparent 2px 16px),#72c7d3; }
+  .shore { position:absolute; top:95px; bottom:0; width:22%; background:#d6c28b; z-index:1; }
+  .left { left:0; border-radius:0 40% 0 0; } .right { right:0; border-radius:40% 0 0 0; }
+  .village,.tank,.bridge,.rock { position:absolute; z-index:3; }
+  .village { left:6%; top:185px; text-align:center; font-size:44px; }
+  .village small,.tank small { display:block; font-size:13px; font-weight:700; color:var(--ink); background:#fffdf5cc; border-radius:8px; padding:2px 5px; }
+  .tank { right:6%; top:190px; text-align:center; font-size:43px; }
+  .bridge { left:19%; right:19%; top:315px; height:48px; border-top:12px solid #9b704e; border-bottom:12px solid #9b704e; background:repeating-linear-gradient(90deg,#be8b5d 0 22px,#79583f 22px 27px); }
+  .bridge span { position:absolute; top:-43px; left:50%; transform:translateX(-50%); white-space:nowrap; background:#fffdf5dd; padding:2px 7px; border-radius:7px; font-size:13px; font-weight:700; }
+  .rock { font-size:36px; filter:saturate(.7); } .r1{left:34%;top:165px}.r2{left:48%;top:245px}.r3{left:62%;top:155px}.r4{left:74%;top:270px}
+  .path { position:absolute; z-index:2; left:20%; top:235px; width:60%; height:5px; background:#f9ffff; opacity:0; transform-origin:left; transition:.4s; }
+  .path.show { opacity:.9; } .path.long { transform:rotate(12deg) scaleY(1.3); }
+  .tidebar { height:18px; background:#d8e3e0; border-radius:10px; overflow:hidden; margin:8px 0 4px; }
+  #tideFill { display:block; width:25%; height:100%; background:var(--deep); transition:width .7s,background .4s; }
+  .stats { display:flex; justify-content:space-between; font-size:14px; color:var(--muted); }
+  textarea { width:100%; min-height:170px; resize:vertical; border:2px solid #9cbabd; border-radius:9px; padding:11px; font:16px/1.55 ui-monospace,monospace; background:#f8fbf2; color:#173042; }
+  .hint { color:var(--muted); font-size:14px; margin:7px 0 12px; }
+  button { border:0; border-radius:9px; padding:11px 16px; font-weight:750; font-size:15px; cursor:pointer; background:var(--accent); color:white; box-shadow:0 2px 0 #a84d28; }
+  button.secondary { background:#e4eeee; color:var(--ink); box-shadow:0 2px 0 #adc4c4; margin-left:7px; }
+  #message { min-height:76px; margin-top:14px; border-radius:9px; padding:10px 12px; background:#eef5f2; border-left:5px solid var(--deep); }
+  #message.good { border-color:var(--good); background:#e6f4e9; } #message.bad { border-color:var(--bad); background:#fff0eb; }
+  .legend { margin-top:12px; color:var(--muted); font-size:13px; }
+  @media(max-width:730px){ .layout{grid-template-columns:1fr}.scene{min-height:380px}.bridge{top:285px}.village{top:155px}.tank{top:160px} }
+</style>
+</head>
+<body>
+<main>
+  <h1>Get the water across</h1>
+  <p class="sub">The village tank is empty. Carry 3 fresh buckets over the rocky inlet before the tide reaches the footbridge.</p>
+  <section class="layout">
+    <div>
+      <div class="card scene" aria-label="Tidepool inlet scene">
+        <div class="sky">☀️ Morning at Tidepool Village</div><div id="water" class="water"></div>
+        <div class="shore left"></div><div class="shore right"></div>
+        <div class="village">🏠<small>Village well<br>3 buckets ready</small></div>
+        <div class="tank">🪣<small>Empty tank</small></div>
+        <div class="rock r1">🪨</div><div class="rock r2">🪨</div><div class="rock r3">🪨</div><div class="rock r4">🪨</div>
+        <div id="path" class="path"></div><div class="bridge"><span>footbridge — tide must stay below here</span></div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h2>Tide level</h2><div class="tidebar"><span id="tideFill"></span></div><div class="stats"><span>low tide</span><span id="tideText">25 / 100</span><span>bridge is lost at 100</span></div>
+      </div>
+    </div>
+    <aside class="card">
+      <h2>Plan the ferry</h2>
+      <p class="hint">Edit the tiny carrying plan. Each line is one crossing. Use <code>carry</code> or <code>wait</code>. A carry takes 20 tide; a wait takes 10.</p>
+      <textarea id="program" spellcheck="false" aria-label="Carrying plan">carry
+carry
+carry</textarea>
+      <p><button id="run">▶ Run plan</button><button id="reset" class="secondary">Reset</button></p>
+      <div id="message" role="status">Choose a plan, then run it. Watch the water and tank change.</div>
+      <div class="legend">Tip: You can run a plan that is not perfect. The tide and delivered buckets will show what to repair.</div>
+    </aside>
+  </section>
+</main>
+<script>
+  const program = document.querySelector('#program'), run = document.querySelector('#run'), reset = document.querySelector('#reset');
+  const fill = document.querySelector('#tideFill'), tideText = document.querySelector('#tideText'), message = document.querySelector('#message');
+  const water = document.querySelector('#water'), path = document.querySelector('#path');
+  let tide = 25, delivered = 0;
+  function draw(){ fill.style.width = Math.min(tide,100)+'%'; fill.style.background = tide >= 80 ? '#c65347' : '#319bb0'; tideText.textContent = tide+' / 100'; water.classList.toggle('risen',tide>=70); }
+  function say(text, kind){ message.className=kind||''; message.innerHTML=text; }
+  run.onclick = () => {
+    const lines = program.value.split(/\n/).map(x=>x.trim().toLowerCase()).filter(Boolean);
+    tide=25; delivered=0; let waits=0, invalid=0;
+    lines.forEach((command,i)=>{ if(command==='carry'){ if(tide < 100){ delivered++; tide+=20; } } else if(command==='wait'){ tide+=10; waits++; } else { invalid++; } });
+    path.className = 'path show '+(waits?'long':''); draw();
+    if(invalid) say('The villagers do not recognize '+invalid+' line'+(invalid>1?'s':'')+'. Try <code>carry</code> or <code>wait</code>. The plan did not deliver those lines.', 'bad');
+    else if(delivered>=3 && tide<100) say('Success! <strong>3 buckets reached the tank</strong> while the footbridge is still above water. The useful idea was to keep moving before the tide climbed.', 'good');
+    else if(tide>=100) say('The tide covered the footbridge after '+delivered+' bucket'+(delivered===1?'':'s')+'. The water route is gone. Remove delays and run again.', 'bad');
+    else say('Only <strong>'+delivered+' of 3 buckets</strong> reached the tank. The path is still open, but the plan ended early. Add another <code>carry</code>.', 'bad');
+  };
+  reset.onclick = () => { program.value='carry\ncarry\ncarry'; tide=25; delivered=0; path.className='path'; draw(); say('Choose a plan, then run it. Watch the water and tank change.'); };
+  draw();
+</script>
+</body>
+</html>
