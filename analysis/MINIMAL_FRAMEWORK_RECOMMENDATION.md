@@ -1,193 +1,195 @@
-# MINIMAL_FRAMEWORK_RECOMMENDATION.md
+# MINIMAL_FRAMEWORK_RECOMMENDATION.md — Provisional Post-Review Position
 
-## One-Sentence Thesis
+## Status
 
-> A world is a small set of named cells mutated only through guarded, four-phase-disciplined transitions fired by one or more instruction lists sharing a clock — direct mutation is the default causal engine, and any puzzle may opt a specific cell or actor into authoritative, versioned replay-logging when (and only when) it actually needs free time-travel.
+This document is a design direction, not an implementation-ready framework contract. The review exposed load-bearing topology, progression, arbitration, query, and history questions that must be answered by a focused Round 3 probe.
 
-This is the **minimal architectural commitment** answer: one behavioral atom (`GuardedTransition`), one data atom (`StateCell`), one program atom (`Directive`), a shared `Clock`, and a `Log` whose *authority* is a per-puzzle dial, not a framework-wide constant.
+## Working thesis
 
----
+Use a deterministic fixed-step simulation with frozen prior-state proposals, explicit selection/arbitration, deterministic commit, and a strict presentation boundary. Keep player-facing authoring forms heterogeneous until evidence shows that a shared representation helps rather than erases meaning.
 
-## Chosen Architecture — a Justified Synthesis, Not a Single Candidate
+The shared kernel hypothesis is therefore:
 
-Per `FRAMEWORK_ADVERSARIAL_REVIEW.md`'s final scorecard, no candidate from `FRAMEWORK_CANDIDATES.md` wins outright. The recommendation is a deliberate merge, traceable line-by-line to the debate:
+```text
+Authoring Surface
+  → puzzle-specific semantic artifact
+  → optional compiler / adapter
+  → deterministic simulation kernel
+  → queries / renderer / observability
+```
 
-1. **Default kernel discipline = Candidate 1 (Tape Machine).** Direct mutation, `Directive(sequence)` as the player's primary mental model ("a numbered list of steps"), because Section 1 and Combo 3 both show this is the only option that is *safe by default* against mid-run player-code interruption — the single explicitly-named nasty case in this round's brief.
-2. **Every tick, regardless of authority mode, runs Candidate 2's discipline internally** — the Section 2 four-phase law (collect → propose against frozen prior-state → commit in fixed order → recompute one-level derived cells). This is not optional ceremony; Combo 1 and the state-pollution attack both show hand-ordered convention (what Echo Chamber Bridge does today, by luck) is not good enough for a shared kernel meant to host puzzles no single author has reviewed together.
-3. **Fold-authority (Candidate 2's free scrubbing) is available per-puzzle, per-cell, opt-in** — not the default, because Combo 3 proves naive always-on replay-from-log is unsafe under hot-editing unless the extra rule-versioning discipline (below) is also paid for. Puzzles that want an Echo-Canyon-style time slider request it explicitly and get the versioning machinery that makes it safe.
-4. **Candidate 3's derived-cell mechanism is retained as a first-class, always-available capability** (`StateCell(derived)`) — not a competing kernel, just the correct treatment for wiring/law/ecology content, exactly as Section 3's `LawCell` collapse demonstrated.
-5. **Two additions earned by the red-team, not present in Round-1 thinking**, are now mandatory parts of the spec: (a) `StateCell.scope: 'per-tick' | 'run'` (Combo 2 — latches must not flicker under scrubbing), and (b) rule/program changes are themselves logged, versioned events, never an ambient live global a replay function reads (Combo 3).
+Possible artifacts include `ActionPlan`, `RuleSet`, `TopologySpec`, `ConnectionMap`, `TransformChain`, and `WorldLaw`. `Directive` remains a useful optional target for action plans and rule sets; it is not a required target for every artifact.
 
----
-
-## Layer Breakdown
+## Layer breakdown
 
 ```mermaid
 graph TD
-  A[Authoring Surface<br/>textarea DSL / dropdowns / drag-drop — per-puzzle, player-facing] --> B[Directive Compiler<br/>shared tokenizer -> tagged Directive-tuples, sequence or scan mode]
-  B --> C[Kernel<br/>Clock + StateCell + GuardedTransition + four-phase tick]
-  C --> D[Log<br/>observational by default; fold+versioned-rules opt-in per cell/actor]
-  C --> E[Renderer / Observability<br/>DOM, trace readout, optional time-slider if Log is fold-mode]
+  A[Per-puzzle authoring surface] --> B[Semantic artifact]
+  B --> C[Optional compiler or adapter]
+  C --> D[Deterministic tick kernel]
+  D --> E[SimulationState at tick t]
+  D --> F[Pure queries and derived views]
+  D --> G[Optional History Replay Snapshot service]
+  D --> H[Explicit RunMetaState events]
+  E --> I[Renderer / trace / observability]
+  H --> I
 ```
 
-- **Authoring Surface:** per-puzzle (text DSL, dropdowns, drag targets) — deliberately *not* unified, because puzzle content should not be forced into one visual language (`coding-game 4D Product Description.md` explicitly keeps the visual form open). What *is* shared is layer B.
-- **Directive Compiler:** the one piece of infrastructure the current 40-demo corpus lacks and should gain — a shared tokenizer that any puzzle's authoring surface targets, emitting `Directive{op,args,mode}`. This directly answers Section 1's open dissent (Beta): unifying the kernel IR is necessary but not sufficient without also unifying the compiler surface puzzles emit into.
-- **Kernel:** the only layer this document specifies in detail (below). Puzzle-agnostic, ships once.
-- **Log:** per-puzzle dial. Default `observational`. A puzzle (or a single actor/cell within a puzzle) may declare `fold` + a snapshot interval + rule-versioning, at the cost of the bookkeeping in Combo 3's patch.
+- **Authoring surface:** stays per-puzzle. Dragging a moss topology, selecting a connection map, ordering flowers, and typing a command plan need not look alike.
+- **Semantic artifact:** preserves the player's actual decision. Do not wrap every artifact in `{op,args}` only to claim a common IR.
+- **Compiler/adapter:** optional and typed. Share validation, clocks, proposal contracts, and diagnostics where useful; share syntax only where the player experience benefits.
+- **Kernel:** owns time, proposal evaluation, selection, conflict handling, commit, and state boundaries.
+- **History service:** optional. A puzzle may request replay, snapshots, rule-versioning, or trace collection without making those capabilities part of every world model.
+- **Run metadata:** achievements, unlocks, and run identity are separate from historical simulation facts.
 
----
+## Conceptual contracts
 
-## Core API / Data Structure Contracts
+The following are deliberately labeled conceptual sketches. They describe boundaries to probe; they are not drop-in TypeScript APIs.
+
+### Simulation state and run metadata
 
 ```ts
-type Clock = number
-
-type StateCell<T = unknown> =
-  | { kind: 'stored';  scope: 'per-tick' | 'run'; value: T }
-  | { kind: 'derived'; formula: (clock: Clock, stored: Readonly<Record<string, unknown>>) => T }
-  // 'run'-scoped stored cells are write-once-per-run latches (Combo 2): a fold-replay
-  // to any tick T never un-sets a 'run'-scoped cell that was true at the *live* tick,
-  // even while inspecting T < the tick it first became true.
-
-type Directive = { op: string; args: Record<string, number | string | boolean> }
-
-type DirectiveList = {
-  id: string
-  mode: 'sequence' | 'scan'
-  items: Directive[]
-  pc?: number                 // sequence mode only
+type SimulationState = {
+  tick: number
+  values: Record<string, unknown>
+  structures: Record<string, unknown>
 }
 
-type Firing = { listId: string; directive: Directive; tick: Clock }
-
-type TraceEntry = { tick: Clock; source: string; op: string; ok: boolean; reason?: string }
-
-type GuardedTransition = (
-  cells: Readonly<Record<string, StateCell>>,
-  firing: Firing
-) => { ok: true; patch: Record<string, StateCell> } | { ok: false; reason: string }
-
-type World = {
-  cells: Record<string, StateCell>
-  lists: DirectiveList[]
-  log:
-    | { authority: 'observational'; entries: TraceEntry[] }
-    | { authority: 'fold'; ruleVersions: Array<{ sinceTick: Clock; lists: DirectiveList[] }>
-      ; snapshotEveryTicks: number; snapshots: Array<{ tick: Clock; cells: Record<string, StateCell> }> }
-}
-
-// The one required kernel function, mandatory four-phase discipline (Section 2 verdict):
-function tick(world: World, t: Clock, transitions: Record<string, GuardedTransition>): World {
-  // Phase A — collect, from the ruleset active AT TICK t (fold mode) or live (observational mode)
-  const activeLists = world.log.authority === 'fold'
-    ? mostRecentRuleVersionAtOrBefore(world.log.ruleVersions, t)
-    : world.lists
-  const firings: Firing[] = activeLists.flatMap(l =>
-    l.mode === 'sequence'
-      ? (l.pc! < l.items.length ? [{ listId: l.id, directive: l.items[l.pc!], tick: t }] : [])
-      : l.items.map(d => ({ listId: l.id, directive: d, tick: t })))
-
-  // Phase B — propose, reading ONLY world.cells as committed before this tick (never another firing's result)
-  const proposals = firings.map(f => ({ f, r: transitions[f.f?.directive.op ?? f.directive.op](world.cells, f) }))
-
-  // Phase C — commit, in fixed firing order
-  let cells = { ...world.cells }
-  const trace: TraceEntry[] = []
-  for (const { f, r } of proposals) {
-    if (r.ok) cells = { ...cells, ...r.patch }
-    trace.push({ tick: t, source: f.listId, op: f.directive.op, ok: r.ok, reason: r.ok ? undefined : r.reason })
-  }
-
-  // Phase D — recompute derived cells, one level only, from cells just committed
-  for (const [k, c] of Object.entries(cells)) if (c.kind === 'derived') cells[k] = { ...c, }; // formula evaluated lazily on read
-
-  // Phase E — advance sequence-mode program counters for firings that succeeded
-  const lists = activeLists.map(l => {
-    if (l.mode !== 'sequence') return l
-    const fired = proposals.find(p => p.f.listId === l.id)
-    return fired?.r.ok ? { ...l, pc: (l.pc! + 1) % l.items.length } : l
-  })
-
-  return { ...world, cells, lists, log: appendTrace(world.log, trace) }
-}
-
-// Free-when-opted-in scrubbing (Candidate 2, per Section 2 + Combo 3 patch):
-function stateAt(world: World, targetTick: Clock, transitions: Record<string, GuardedTransition>): World {
-  if (world.log.authority !== 'fold') throw new Error('scrubbing requires fold authority')
-  const base = nearestSnapshotAtOrBefore(world.log.snapshots, targetTick) // bounds cost to O(snapshotEveryTicks)
-  let w = base
-  for (let t = base_tick + 1; t <= targetTick; t++) w = tick(w, t, transitions)
-  return w
+type RunMetaState = {
+  runId: string
+  achievements: Record<string, boolean>
+  unlocks: Record<string, boolean>
+  events: Array<{ tick: number; kind: string; data: unknown }>
 }
 ```
 
-Everything above is a direct, line-traceable implementation of the 5 primitives in `PRIMITIVE_COMPOSITION.md` — nothing new is introduced except the two red-team-earned flags (`StateCell.scope`, `log.ruleVersions`).
+`SimulationState(t)` is the historical truth shown when the player inspects tick `t`. A scrub must not alter it. `RunMetaState` persists across scrubbing only because an explicit run event updated it; it must not silently rewrite a historical simulation frame. A meta event may read a declared simulation result, but it cannot mutate simulation state outside the tick/effect contract.
 
----
+### Optional Directive lists
 
-## Three Heterogeneous Probe Validations
+```ts
+type Directive = {
+  op: string
+  args: Record<string, number | string | boolean>
+}
 
-### Probe 1 — Echo Chamber Bridge (multi-actor, simultaneous gate)
-```
-lists = [
-  {id:'echo', mode:'sequence', items:[MOVE,MOVE,MOVE,PRESS], pc:0},
-  {id:'live', mode:'sequence', items:[MOVE,MOVE,MOVE,MOVE,MOVE,PRESS], pc:0}
-]
-cells = { echoPos: stored(0), livePos: stored(0), gateOpened: stored(false, scope:'run') }
-transition('PRESS') = (cells, firing) =>
-  firing.listId==='echo'
-    ? (cells.echoPos.value===PLATE_A ? {ok:true, patch:{}} : {ok:false, reason:'not on plate'})
-    : (cells.livePos.value===PLATE_B ? {ok:true, patch:{}} : {ok:false, reason:'not on plate'})
-derived('gateReady') = (clock, s) => /* Phase D, reads Phase-C-committed echoPos/livePos */
-  wasFiredOkThisTick('echo','PRESS') && wasFiredOkThisTick('live','PRESS')
-// Phase E then sets gateOpened.value = true (scope:'run') the first tick gateReady is true — survives any later scrub.
-```
-Both lanes fire in Phase B against the **same frozen prior tick**; the joint condition is a Phase-D derived read. No kernel change from the generic spec above. Confirms Combo 1's verdict.
+type SequencePolicy = {
+  advance: 'always' | 'on-success' | 'until-success'
+  termination: 'once' | 'loop' | 'repeat-n' | 'hold'
+}
 
-### Probe 2 — Mole Sensor Greenhouse (scan-mode, sensor-alias, continuous ODE)
-```
-cells = { s1_target: stored(2), s2_target: stored(1), 'pot0.m': stored(30), ..., 'pot3.m': stored(30) }
-lists = [{id:'rules', mode:'scan', items:[
-  {op:'water_if', args:{sensorCell:'s1_target', thr:50, potIdx:0}},
-  {op:'water_at', args:{t:6, potIdx:2, dur:4}}
-]}]
-transition('water_if') = (cells, f) => {
-  const sensedPot = cells[f.directive.args.sensorCell].value            // the alias dereference, Section 3.1's de-sugar
-  const moisture = cells[`pot${sensedPot}.m`].value
-  return moisture < f.directive.args.thr
-    ? { ok:true, patch: { [`pot${f.directive.args.potIdx}.watering`]: stored(true) } }
-    : { ok:false, reason:'above threshold' }
+type ScanPolicy = {
+  selection: 'first-match' | 'all-match' | 'priority' | 'exclusive'
+  conflict: 'reject' | 'merge' | 'declared-order'
 }
 ```
-`scan` mode re-fires every item every tick (no `pc`); the alias indirection (`s1_target` naming which pot) is an ordinary `StateCell` dereference inside the transition, exactly as `PRIMITIVE_EXTRACTION.md` §3.1 concluded. The ODE-like moisture decay is a second, unconditional (`always-ok`) transition firing every tick — no new primitive.
 
-### Probe 3 — Dam That Breathes (continuous law + one-way latch + fold-authority scrubbing, opted in)
+These policy fields are required whenever a puzzle chooses a sequence or scan representation:
+
+- failed actions may consume a tick without advancing;
+- `on-success` and `until-success` must define retry and livelock behavior;
+- finite programs must not wrap unless `loop` or `repeat-n` is declared;
+- first-match, all-match, priority, and exclusive groups are distinct;
+- simultaneous writes need an explicit conflict policy rather than accidental patch-order selection.
+
+### Proposal and tick discipline
+
+```ts
+type Proposal = {
+  source: string
+  outcome: 'success' | 'failure'
+  consumesTick: boolean
+  effects: Array<{ target: string; value: unknown }>
+  reason?: string
+}
+
+// Conceptual sketch: collect, evaluate, arbitrate, commit, then query.
+function tick(
+  prior: SimulationState,
+  meta: RunMetaState,
+  intents: unknown[],
+  queries: Record<string, (state: SimulationState) => unknown>
+): {
+  state: SimulationState
+  meta: RunMetaState
+  views: Record<string, unknown>
+  proposals: Proposal[]
+} {
+  const proposals = collectAndEvaluate(intents, prior)
+  const accepted = arbitrate(proposals, prior)
+  const state = commit(prior, accepted)
+  const views = Object.fromEntries(
+    Object.entries(queries).map(([name, query]) => [name, query(state)])
+  )
+  const metaEvents = deriveExplicitMetaEvents(state, accepted)
+  return { state, meta: applyMetaEvents(meta, metaEvents), views, proposals }
+}
 ```
-world.log = { authority:'fold', ruleVersions:[{sinceTick:0, lists:[cascadeRules]}], snapshotEveryTicks: 25, snapshots:[] }
-cells = { level: stored(48), opening: derived((clock,s)=> firstMatch(s.cascadeRules, s.level).open), gate: stored(false, scope:'run') }
-transition('advance_river') = always-ok; patch = { level: level + (inflow(clock) - outflow(level,opening))/AREA }
-```
-Player edits the rule cascade mid-run → recorded as a **new entry in `ruleVersions` at the live tick**, never mutating the version already used for ticks before it. `stateAt(world, T)` for any `T` replays only from the nearest snapshot, using whichever `ruleVersions` entry was active at each historical tick — directly resolving Combo 3. `gate`'s `scope:'run'` ensures scrubbing to `T` before the latch tick shows the true historical `opening`/`level` without retracting the achievement — directly resolving Combo 2.
 
-All three probes run on the **same unmodified kernel** (`tick`/`stateAt` above) with zero puzzle-specific kernel forks — the composability claim from `PRIMITIVE_COMPOSITION.md` holds under adversarial load.
+The helper names in this sketch are conceptual boundaries, not hidden global functions. Their contracts must be specified before implementation. In particular, `arbitrate` must select first/all/priority/exclusive matches and resolve effect conflicts deterministically; `commit` must read no in-flight result while proposals are being evaluated.
 
----
+## Structure/Topology gate
 
-## Explicit Non-Goals (Tier C — do not build)
+The recommendation cannot exclude runtime structure semantics:
 
-- A general reactive/FRP engine with multi-level derived-cell dependency graphs, cycle detection, or topological re-evaluation — killed twice (Round 1 Paradigm C weakness; this round's `LawCell` collapse). The one-level derivation rule is deliberately load-bearing and must not be "improved" into a general dataflow graph.
-- A general graph-rewriting/term-rewriting engine for "wiring" puzzles — Section 1 and `PRIMITIVE_EXTRACTION.md` §3.3 found zero runtime graph traversal in any shipped demo; every "wiring" instance is a flat expression scan.
-- A general `Relation(EntityA, EntityB, kind)` triple-store for inventory/carrying — no demo ever performs a reverse relational query; a namespaced `StateCell` always sufficed.
-- `eval()`/`new Function()` of arbitrary player-authored JS — zero precedent in 40 demos; every "program" is a restricted tagged-tuple stream through a bespoke tokenizer. Any real language growth happens at the Directive Compiler layer, not by widening to a general-purpose language.
-- Self-modifying / program-as-freely-mutable-world-entity (full Paradigm C) — one narrow precedent (Replay Printshop) is fully covered by "a cell may hold Directive data"; nothing more should be built.
-- A universal drag-and-drop / node-editor authoring UI baked into the kernel — authoring surfaces stay per-puzzle (Layer Breakdown, layer A); only the compiler target (layer B) is shared.
+- Mimic Moss executes synchronous neighbor propagation with distance and color transformation (`experiments/cross-model-deepseek/demo-06/index.html:87-105,130-139`).
+- Programming Spider creates persistent edges that later carry rain (`experiments/blind-batch-001/demo-07/index.html:4`; `DESIGN.md:9-23`).
+- Circuit Golem changes connection mapping from eyes to arms (`experiments/cross-model-claude-sonnet-5/demo-06/index.html:71-85,122-169`).
+- Prism Burrow composes an ordered chain of transformations (`experiments/cross-model-kimi-k3/demo-06/index.html:98-102,176-182`).
 
----
+Do not build a general graph-rewriting engine yet. First test the smallest typed capability that can support the four cases. It may become one Structure service, several domain types, or ordinary state plus puzzle-specific queries. The framework must not decide that question by assuming every structure is a Directive list.
 
-## Open Risks & Honest Limitations
+## History and replay gate
 
-1. **O(T)/O(T²) replay cost for fold-authority puzzles without snapshotting is a real scaling cliff**, currently masked because every demo in the corpus keeps `maxT` in the low hundreds. `snapshotEveryTicks` is not optional once a puzzle's timeline is meant to run long or continuously.
-2. **Rule-versioning (Combo 3's patch) adds real authoring/engine complexity** that puzzles using plain `observational` authority never have to pay. This is a genuine cost of offering free scrubbing, not a solved-for-nothing win — pick `fold` per-puzzle deliberately, not by default.
-3. **The `scope:'run'` vs per-tick distinction on `StateCell` (Combo 2) is new, untested in any shipped demo.** It is derived logically from the debate, not empirically observed — flag it to a human designer before relying on it for a real "scrub back in time" player-facing feature.
-4. **The Directive Compiler (shared tokenizer/authoring layer) does not exist yet anywhere in the corpus.** Every one of the 40 demos hand-rolls its own parser. This recommendation's kernel layer is fully evidenced; its compiler layer is a design proposal, not yet an empirical finding, and is the largest remaining piece of net-new engineering implied by this document.
-5. **Beta's open dissent from Section 1 stands:** unifying the kernel IR does not by itself unify the player-visible language. "The language grows with the player" (product principle) requires the Directive Compiler to actually be shared across puzzles going forward — a process/adoption discipline this document cannot enforce by architecture alone.
+History/Replay/Snapshot is an optional engine service. DeepSeek's pure `SIM.run` shows that replay can be valuable (`experiments/cross-model-deepseek/demo-05/index.html:76-104`), but forward-only puzzles may prefer incremental state. If a puzzle allows hot-editing during a replayable run, authored rules must be versioned by tick; a replay query must never read a live rule set and silently rewrite earlier history.
+
+Snapshots are an optimization and a semantic boundary only when a puzzle exposes scrubbing. They do not turn achievements into historical simulation cells.
+
+## Probe plan before implementation
+
+### Probe 1 — Echo Chamber progression
+
+Represent a failed `PRESS` that consumes a tick but leaves the cursor/action position unchanged (`experiments/cross-model-claude-sonnet-5/demo-03/index.html:68-72`). Run the same scenario with `always`, `on-success`, `once`, and `loop` policies. Acceptance: no policy is smuggled in through `ok` or modulo arithmetic.
+
+### Probe 2 — Dam scan arbitration
+
+Use thresholds where multiple rules match, then compare `first-match`, `all-match`, `priority`, and `exclusive` policies (`experiments/cross-model-deepseek/demo-05/index.html:76-90`). Acceptance: no patch is selected by incidental iteration order; conflict behavior is visible in the result.
+
+### Probe 3 — Mimic Moss and Programming Spider structure
+
+Run Moss with multiple paths, equal-distance colors, cycles, and sprouting; run Spider with duplicate, broken, and disconnected edges. Acceptance: determine whether a shared structure API is real or whether typed topology and relation artifacts should remain separate.
+
+### Probe 4 — Golem mapping and Prism chain
+
+Compare a connection map and an ordered transformation chain against the structure API from Probe 3. Acceptance: reject an abstraction that makes either authored artifact less legible or semantically ambiguous.
+
+### Probe 5 — History versus metadata
+
+Scrub a historical gate before its opening while preserving a separately recorded achievement. Acceptance: the selected `SimulationState(t)` is truthful, and `RunMetaState` persists only through explicit event semantics.
+
+## Explicit non-goals for this gate
+
+- No ECS commitment: the corpus does not require entity-component-system machinery.
+- No universal drag-and-drop or node-editor UI in the kernel.
+- No arbitrary player-authored JavaScript evaluation.
+- No assumption that all programs are instruction lists.
+- No general graph-rewriting engine before the structure probes justify one.
+- No general FRP/dataflow engine before Query versus derived-state probes justify dependency semantics.
+
+## Open risks and decisions
+
+1. **Structure boundary:** one reusable structure service versus typed domain structures.
+2. **Authoring adapters:** shared validation and diagnostics versus a shared compiler target.
+3. **Progression:** exact retry, time-consumption, termination, and livelock semantics.
+4. **Arbitration:** selection, priority, equal-priority ties, and write conflicts.
+5. **Query model:** pure views, identity-bearing derived state, or both.
+6. **History service:** snapshots, rule versions, trace policy, and performance at long timelines.
+7. **Simulation/meta split:** which events award achievements and which facts remain historical.
+
+## Implementation gate
+
+Do not begin framework probes in production code until the Round 3 matrix has evidence-backed decisions for topology/structure, the role of `Directive`, History/Replay/Snapshot, Query versus derived state, progression, scan arbitration, and the SimulationState/RunMetaState boundary. The only recommendation ready to carry forward now is the deterministic fixed-step causal discipline and the separation between simulation and presentation.
+
+## Validation note
+
+This revision is documentation-only, so no automated implementation tests are required. Validate it with a manual evidence audit, grep for stale claims, repository-qualified path checks, cross-document terminology checks, and a pseudo-API sanity pass. Every code block in this document is labeled conceptual and must remain internally coherent.

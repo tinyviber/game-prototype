@@ -1,107 +1,146 @@
-# FRAMEWORK_CANDIDATES.md
+# FRAMEWORK_CANDIDATES.md — Round 3 Candidate Set
 
-**Role:** Subagent-Beta (Radical Paradigm Brainstormer), checked by Alpha/Gamma for genuine heterogeneity. Three candidates below share the same 5-primitive vocabulary (`PRIMITIVE_COMPOSITION.md`) but differ in **which primitive is the organizing center of the kernel** — this is what makes them architecturally distinct rather than reskins of one engine.
+The candidates below are competing organizing strategies, not implementations to start immediately. They share a small provisional vocabulary—clock, simulation state, transition/effect flow, queries, and explicit policies—but they do not assume that every authoring surface is an instruction list.
 
----
+The strongest shared constraint remains:
 
-## Candidate 1 — "The Tape Machine" (imperative / VM-centric)
-
-**One-sentence identity:** the world is a fetch-execute loop; `Directive(sequence)` and its program counter are the primary object, everything else hangs off it.
-
-**Core data structures**
-```ts
-type World = {
-  cells: Record<string, StateCell>
-  lists: DirectiveList[]           // one per actor; each carries its own pc (sequence) or none (scan)
-  log: { authority: 'observational'; entries: TraceEntry[] }   // default: NOT authoritative
-}
+```text
+collect
+→ propose against frozen SimulationState(t - 1)
+→ arbitrate
+→ commit deterministically
+→ expose queries / views
 ```
 
-**Kernel loop**
+Presentation remains downstream of simulation. No candidate requires ECS, and no candidate is treated as the winner before the Round 3 falsification matrix is answered.
+
+## Candidate 1 — Tape Machine
+
+**Identity:** a sequence-oriented action plan is a first-class runtime input, with a cursor and explicit progression policy.
+
 ```ts
-function tick(world: World, t: Clock): World {
-  const firings = world.lists.flatMap(l =>
-    l.mode === 'sequence' ? [{list: l, directive: l.items[l.pc], tick: t}]
-                           : l.items.map(d => ({list: l, directive: d, tick: t})))
-  let w = world
-  const trace: TraceEntry[] = []
-  for (const f of firings) {
-    const r = transitionFor(f.directive.op)(w, f)
-    w = r.world; trace.push(r.trace)
-    if (f.list.mode === 'sequence' && r.ok) f.list.pc = (f.list.pc + 1) % f.list.items.length
+type ActionPlan = {
+  items: Directive[]
+  progression: {
+    advance: 'always' | 'on-success' | 'until-success'
+    termination: 'once' | 'loop' | 'repeat-n' | 'hold'
   }
-  return { ...w, log: { authority: 'observational', entries: [...w.log.entries, ...trace] } }
 }
 ```
-Mutation is **direct**: `transitionFor` writes straight into `w.cells`. The log is a side-channel, off by default. A puzzle *opts in* to `authority: 'fold'` only if it specifically needs scrubbing.
 
-**Authoring implication:** the player-facing surface is literally "a numbered list of steps," matching `blind-batch-001`'s shipped convention almost verbatim. `scan`-mode lists render as "always-on rules" beside the numbered list.
+The plan can be compiled to `Directive(sequence)`, but the compiler is optional and puzzle-specific. A failed action may consume the tick without changing the cursor. A finite queue does not wrap by default; a loop must be declared. Scan-mode rules are separate and require their own selection and conflict policy.
 
-**Best fit:** Firefly Lamplighter, March the Oaf, all of `blind-batch-001` — anything where "my program is a to-do list" is the natural mental model.
-**Worst fit:** Echo Canyon / Dam-style puzzles that want free timeline scrubbing — under Candidate 1 that costs a per-puzzle opt-in and a hand-written replay path, not a kernel guarantee.
-**Known weakness:** nothing stops an author from doing what Firefly Lamplighter did — mutating countdown state in place inside a `Directive` object — because direct mutation is the default discipline and the kernel does not forbid it.
+**Best fit:** Firefly Lamplighter, March the Oaf, Echo Chamber Bridge, and blind-batch-001's command-driven demos.
 
----
+**Topology fit:** the action plan can construct a structure, but the structure's traversal and propagation semantics must live elsewhere. Programming Spider is therefore a stress test, not a complete fit.
 
-## Candidate 2 — "The Ledger" (event-sourced / reducer-centric)
+**Known risk:** a cursor-centric kernel can make every authored object look like a command tape and can hide runtime state inside authored data, as Firefly does (`experiments/cross-model-kimi-k3/demo-02/index.html:112-121`).
 
-**One-sentence identity:** the world is never stored; it is always *recomputed* from an authoritative log — matching what `cross-model-deepseek`'s `SIM.run` already does in shipped code.
+## Candidate 2 — Replay / History Authority
 
-**Core data structures**
+**Identity:** simulation frames are derived from initial state plus timestamped inputs and versioned authored rules; scrubbing is a History/Replay/Snapshot service.
+
 ```ts
-type Log = { rules: DirectiveList[]; events: Array<{ tick: Clock; op: string; args: any }> }
-function stateAt(log: Log, uptoTick: Clock): World {
-  let w = initialWorld()
-  for (let t = 0; t <= uptoTick; t++) {
-    const firings = collectFirings(log.rules, log.events, t)      // scan-mode rules + any sequence-mode event due at t
-    for (const f of firings) w = transitionFor(f.op)(w, f).world  // pure; no persistent World object outside this loop
-  }
-  return w
+type HistoryService = {
+  inputs: Array<{ tick: Clock; event: unknown }>
+  ruleVersions: Array<{ sinceTick: Clock; artifact: unknown }>
+  snapshotEvery?: number
+  stateAt(tick: Clock): SimulationState
 }
 ```
-There is no `World` that survives between calls — `stateAt(log, T)` is a pure function, called fresh every time the UI needs a frame (exactly `SIM.run(rules, moves, maxT)`'s real signature). Scrubbing a time slider to any `T` (forward *or* backward) is the same call with a different argument — **no special-case rewind code required**, at the cost of O(T) work per query.
 
-**Authoring implication:** the player edits `log.rules` (their program) and the log of "what I actually pressed" is recorded as timestamped events; "run" and "scrub" are the same operation at different `T`. A visible time-slider is a free, universal UI feature, not per-puzzle work.
+This resembles `SIM.run` in the Dam and Echo Canyon experiments (`experiments/cross-model-deepseek/demo-05/index.html:76-104`). It is not required that every puzzle store an explicit append-only `Log`, and replay authority is not automatically a gameplay semantic.
 
-**Best fit:** Echo Canyon, Dam That Breathes, anything where "let the kid drag time back and forth to see what happened" is pedagogically valuable — directly serves the product principle that execution must be spatially/temporally observable.
-**Worst fit:** long-running or high-resolution puzzles — O(T) per query becomes O(T²) across a full stepped playthrough; at the corpus's observed scale (`maxT` in the hundreds) this is sub-millisecond, but it is a real, not hypothetical, scaling cliff (see `FRAMEWORK_ADVERSARIAL_REVIEW.md` §4 Combo 2 and §5).
-**Known weakness:** editing `log.rules` **mid-run** is semantically ambiguous — replaying from t=0 with the *new* rules silently rewrites history that already happened under the *old* rules. Candidate 2 does not resolve this by itself (see adversarial review).
+`SimulationState(t)` must replay historically active rule versions. `RunMetaState` is separate: achievements and unlocks persist across a scrub only when an explicit run event records them; the history service must not silently inject metadata into a historical frame.
 
----
+**Best fit:** Echo Canyon, Dam That Breathes, and puzzles where timeline inspection is itself the lesson.
 
-## Candidate 3 — "The Cellular Board" (dataflow / cell-centric)
+**Known risks:** replay cost, snapshot policy, hot-edit versioning, and ambiguity about whether a run event belongs to simulation history or metadata. Direct incremental execution is safer for forward-only hot edits.
 
-**One-sentence identity:** the world is a labeled spreadsheet; most boxes are formulas, a few boxes are "my character's stuff," and a `Directive` is just the specific shape of value that instruction-holding cells happen to contain.
+## Candidate 3 — Query / State Board
 
-**Core data structures**
+**Identity:** named simulation values are committed in ticks, while pure queries or derived views calculate observations over the committed state.
+
 ```ts
-type Board = { cells: Record<string, StateCell> }
-// an "actor position" cell is StateCell<stored>, but its GuardedTransition is triggered
-// by looking up an instruction-shaped cell (a Directive list) at the current Clock —
-// sequential movement is demoted to a special case of cell derivation, not the kernel's center.
+type Board = {
+  state: SimulationState
+  queries: Record<string, (s: SimulationState) => unknown>
+}
 ```
 
-**Kernel loop:** there is no fetch-execute step distinct from cell recomputation. Every tick:
-1. All `stored` cells with a pending guarded write (including "the character consults its instruction-cell for this tick") commit, in a fixed declared order.
-2. All `derived` cells recompute, once, from the freshly committed `stored` cells (one level only — §1.2's anti-glitch rule).
+This models sensor wiring, law lookup, and readouts naturally. It does not commit to `StateCell(derived)` as the only representation: a query with no identity or history may be cheaper and clearer. A named derived value may still be introduced where identity, caching, or event semantics are real.
 
-**Authoring implication:** the player mostly names and wires boxes (`doorOpen = sensor XOR toggle`); "my program" for a moving character is just one more named box whose formula happens to be "read my instruction-tape cell at time t." This mental model is a direct match for Mole Sensor Greenhouse / Blind Cave Fish / Circuit Golem's wiring-dropdown authoring surface, which already works this way without calling it that.
+**Best fit:** Mole Sensor Greenhouse, Blind Cave Fish, Circuit Golem, and ecology/law puzzles.
 
-**Best fit:** wiring/sensor/ecology/law-mutation puzzles — Mole Sensor Greenhouse, Dam's rule cascade, Convergence Bells.
-**Worst fit:** blind sequential delegation (March the Oaf) — describing "walk 3, push, smash, wait 2" as a spreadsheet formula is a strictly worse mental model than "a numbered list of steps"; nothing is gained and clarity is lost.
-**Known weakness:** derived-cell purity (no cell may depend on another derived cell) must be enforced by the kernel, not by convention, or the classic FRP evaluation-order glitch returns.
+**Known risk:** a query-centric presentation can under-specify sequential progression and same-tick event aggregates. The kernel must still provide proposal collection, arbitration, and deterministic commit.
 
----
+## Candidate 4 — Structure / Topology Kernel
 
-## Comparison Table
+**Identity:** player-authored structures are first-class semantic inputs, and the kernel offers the smallest reusable operations needed to mutate, inspect, and propagate through them.
 
-| | Tape Machine | Ledger | Cellular Board |
-|---|---|---|---|
-| Organizing primitive | `Directive(sequence)` + PC | `Log(fold)` | `StateCell(derived)` |
-| Default mutation discipline | direct | replay-fold | commit-then-derive, one level |
-| Scrubbing/rewind | opt-in, per-puzzle | free, universal, O(T)/query | free for derived cells only; stored-cell history needs its own log |
-| Best player mental model for... | delegation/sequence puzzles | echo/replay/debugging puzzles | wiring/sensor/ecology puzzles |
-| Engine LOC order of magnitude | smallest | small + replay-cost bookkeeping | small + derivation-order discipline |
-| Corpus precedent already shipped | `blind-batch-001` (all 9) | `cross-model-deepseek` (`SIM.run`) | `cross-model-kimi-k3` demo-04, `cross-model-claude-sonnet-5` demo-04/06 |
+Candidate structures include:
 
-All three are carried forward, unweighted, into `FRAMEWORK_ADVERSARIAL_REVIEW.md` for red-team combat.
+- a spatial plant topology with adjacency and path delay (Mimic Moss, `experiments/cross-model-deepseek/demo-06/index.html:87-105`);
+- persistent edges built by an actor and later traversed by flow (Programming Spider, `experiments/blind-batch-001/demo-07/index.html:4`; `DESIGN.md:9-23`);
+- a connection map from sensors to actuators (Circuit Golem, `experiments/cross-model-claude-sonnet-5/demo-06/index.html:71-85,122-169`);
+- an ordered transformation chain (Prism Burrow, `experiments/cross-model-kimi-k3/demo-06/index.html:98-102,176-182`).
+
+The candidate does **not** claim these are one graph type. It asks whether a typed `Structure` interface, or several domain-specific structures, is needed beyond arbitrary state plus puzzle-specific queries.
+
+**Best fit:** the four structure-heavy A-tier examples above.
+
+**Known risk:** a generic graph engine could overfit Moss and Spider, misdescribe Golem mappings, and make Prism's chain unnecessarily graph-like. The first probe should be narrow and evidence-driven.
+
+## Candidate 5 — Heterogeneous Semantic Adapters
+
+**Identity:** authoring remains domain-specific—`ActionPlan`, `RuleSet`, `TopologySpec`, `ConnectionMap`, `TransformChain`, or `WorldLaw`—and each adapter emits deterministic proposals/effects into one shared tick discipline.
+
+```text
+authoring artifact
+  → optional puzzle-specific adapter
+  → proposals / queries / structure operations
+  → deterministic simulation tick
+```
+
+`Directive` is one adapter target, not a universal intermediate representation. This candidate takes seriously that Prism's `chain[]`, Golem's selectors, Spider's edges, and Moss's plants have different player-visible semantics even if their effects eventually reach the same simulation state.
+
+**Best fit:** the full heterogeneous corpus.
+
+**Known risk:** too much adapter freedom could lose shared tooling, diagnostics, and authoring-language growth. The implementation question is what can be shared safely: validation, clocks, proposal contracts, arbitration, and rendering boundaries are stronger candidates than one universal syntax.
+
+## Policy dimensions every candidate must make explicit
+
+### Sequence progression
+
+- `always`: attempt consumes the tick and advances even after failure.
+- `on-success`: failure consumes or does not consume time according to the action contract, but the cursor remains until success.
+- `until-success`: retry is explicit and must have a diagnostic or bound against livelock.
+- termination: `once`, `loop`, `repeat-n`, or `hold`.
+- empty and exhausted programs need declared behavior.
+
+Echo Chamber Bridge supplies the direct counterexample to inferring cursor motion from `ok`: a failed `PRESS` can consume a tick without becoming a successful press (`experiments/cross-model-claude-sonnet-5/demo-03/index.html:68-72`). Firefly supplies a repeating actor, while March supplies a finite queue. Both policies belong in the candidate comparison.
+
+### Scan selection and conflict handling
+
+- `first-match`: stop at the first matching rule, as in the Dam cascade (`experiments/cross-model-deepseek/demo-05/index.html:76-90`).
+- `all-match`: apply every matching rule when effects are intentionally composable.
+- `priority`: select the highest explicit priority, with a deterministic tie rule.
+- `exclusive`: reject or diagnose multiple matches in a mutually exclusive group.
+- conflict: declare whether patches merge, reject, or use a named order. Never let object-spread or incidental iteration order decide.
+
+## Comparison matrix
+
+| | Tape Machine | Replay/History | Query/State Board | Structure/Topology | Heterogeneous Adapters |
+|---|---|---|---|---|---|
+| Natural authoring shape | action plan | timeline + events | named values + queries | topology/map/chain | domain-specific artifact |
+| Directive role | useful sequence/scan target | optional replay input | optional rule data | not assumed | optional adapter target |
+| Progression | explicit cursor policy | event schedule/versioned inputs | adapter-specific | structure mutation policy | adapter-specific |
+| Scan arbitration | required for rule lists | part of replay semantics | selector policy | structure/query policy | shared arbitration contract |
+| Topology support | external/partial | replayed structure history | query over structure | organizing concern | adapter + shared structure operations |
+| History | optional service | organizing service | optional | optional | optional |
+| Simulation/meta split | required | required for scrub semantics | required | required | required |
+| Main failure mode | instruction-list bias | replay cost and hot-edit ambiguity | weak sequence semantics | over-general graph engine | adapter fragmentation |
+
+## Decision status
+
+Candidates 1–5 remain live. Candidate 4 must appear in every future comparison because the expanded corpus contains runtime topology semantics. Candidate 5 is the safest authoring stance until we know whether structure domains can share an API. The shared fixed-tick proposal/arbitration/commit discipline is the current common ground; the organizing primitive and service boundaries remain unsettled.

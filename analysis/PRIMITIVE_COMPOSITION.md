@@ -1,94 +1,170 @@
-# PRIMITIVE_COMPOSITION.md
+# PRIMITIVE_COMPOSITION.md — Provisional Composition Catalogue
 
-**Role:** Subagent-Gamma (Minimalist / Occam's Razor). Input: the 5 surviving seeds from `PRIMITIVE_EXTRACTION.md` §4, plus the `LawCell` probation case. Output: a closed, formal primitive set (target ≤6, landed at **5**) and proof that 12 observed mechanic families are compositions of it, not new atoms.
+**Role:** Minimalist / Occam's Razor. This document records what the current corpus can compose and what Round 3 still has to falsify. It is not an orthogonality proof or a settled primitive list.
 
----
+## 1. Shared simulation contract under test
 
-## 1. The 5 Irreducible Core Primitives (formal spec)
+The strongest commonality across the corpus is a causal discipline, not a single player-facing program shape:
 
-### 1.1 `Clock`
+```text
+collect authored intents
+→ evaluate proposals against frozen SimulationState(t - 1)
+→ select and arbitrate competing effects
+→ commit accepted effects deterministically
+→ expose pure queries / derived views
+→ update explicit RunMetaState events
 ```
-type Clock = integer   // monotonic, starts at 0, advances by exactly 1 per kernel step
-```
-**Necessity proof:** remove it and "hold for N ticks" (Windup Sentries' patrol cycle), "N contiguous ticks in-band" (Dam's `streak`), "1.00s of cumulative overlap" (Echo Twin Waltz's `overlap`) all lose the notion of duration/ordering. Nothing else in the set can express "before/after."
 
-### 1.2 `StateCell`
-```
-type StateCell<T> =
-  | { kind: 'stored';  value: T }                                  // mutated only by a GuardedTransition
-  | { kind: 'derived'; formula: (clock: Clock, stored: StoredView) => T }  // recomputed on every read, never mutated directly
-type World = { cells: Record<string, StateCell<any>> }
-```
-**Restriction that matters:** a `derived` cell may read `Clock` and *stored* cells only — **never another derived cell**. One level of derivation, no chains. This single rule is what prevents the classic FRP "glitch"/evaluation-order hazard (Round-1 Paradigm-C weakness) without needing a dependency graph or topological sort.
-**Necessity proof:** without `stored`, no world fact (position, inventory, resource level) can persist across ticks. Without `derived`, quantities like Convergence Bells' ring radius (`r = 6 + v·(clockT - start)`) or Gravity Dial Hollow's `gAt(t)` would have to be smuggled in as fake "stored" cells manually kept in sync — exactly the bug class that produced Firefly Lamplighter's in-place countdown mutation (`PRIMITIVE_EXTRACTION.md` §2).
+Presentation observes the committed state and views. It does not decide game truth. The discipline is compatible with incremental execution and with an optional replay service; it does not require one of those authority strategies for every puzzle.
 
-### 1.3 `Directive`
+## 2. Provisional semantic vocabulary
+
+### 2.1 `Clock`
+
+```ts
+type Clock = number // fixed-step tick index
 ```
-type Directive = { op: string; args: Record<string, number|string|boolean> }
+
+Duration, ordering, delay, and scheduled events need a common time coordinate. The exact relationship between wall time and simulation ticks is an engine policy, but puzzle semantics should consume the fixed-step clock rather than renderer timing.
+
+### 2.2 `SimulationState(t)` and `RunMetaState`
+
+```ts
+type SimulationState = {
+  tick: Clock
+  values: Record<string, unknown>
+  structures: Record<string, unknown>
+}
+
+type RunMetaState = {
+  runId: string
+  achievements: Record<string, boolean>
+  unlocks: Record<string, boolean>
+  explicitEvents: Array<{ tick: Clock; kind: string; data: unknown }>
+}
+```
+
+`SimulationState(t)` is historical world truth. Scrubbing to tick `t` must show the state computed for `t`; it may be changed only by the simulation's declared transitions. `RunMetaState` is separate: achievements, unlocks, run identity, and other progression facts may persist while the displayed simulation tick changes, but only an explicit run event may update it. Run metadata must not write back into historical simulation state implicitly.
+
+This distinction replaces the earlier idea of making every stored cell carry a scrub-immune scope. Whether an achievement is awarded from an event, and whether a rule version belongs to simulation history or run metadata, remain design decisions that need explicit contracts.
+
+### 2.3 Optional `Directive` data
+
+```ts
+type Directive = {
+  op: string
+  args: Record<string, number | string | boolean>
+}
+
+type SequencePolicy = {
+  advance: 'always' | 'on-success' | 'until-success'
+  termination: 'once' | 'loop' | 'repeat-n' | 'hold'
+}
+
 type DirectiveList = {
   id: string
   mode: 'sequence' | 'scan'
   items: Directive[]
-  pc?: number            // meaningful only when mode === 'sequence'
+  sequence?: SequencePolicy
+  scan?: ScanPolicy
 }
 ```
-- **sequence**: kernel fires `items[pc]` this tick against a matching `GuardedTransition`, then advances `pc` (optionally `% items.length` for looping — Firefly/Windup Sentries pattern).
-- **scan**: kernel fires *every* item in `items` this tick (Mole Sensor's `cont[]`/`sched[]`, Dam's rule cascade).
-**Necessity proof both directions:** forcing `scan`-shaped puzzles into `sequence` mode means unrolling a static condition into an ever-growing re-checked instruction stream — authoring cost blows up for no expressive gain (Blind Cave Fish's 2-line wiring would need to be reconstructed as an infinite polling loop). Forcing `sequence`-shaped puzzles into `scan` mode discards "next" — March the Oaf's blind pre-scripted queue (`WALK`/`PUSH`/`SMASH`/`WAIT` consumed in strict order with no runtime feedback) has no well-defined "condition" to scan for; its entire premise is that the character *cannot sense* the world, so nothing exists to scan against. Neither mode subsumes the other.
 
-### 1.4 `GuardedTransition`
+`Directive` is a useful tagged data shape for action plans and rule sets. It is not a requirement that TopologySpec, ConnectionMap, TransformChain, or WorldLaw authoring be rendered as an instruction list.
+
+The policy fields are explicit because transition success, cursor advancement, time consumption, and program termination are different decisions:
+
+- `advance: 'always'` can model an attempted action that consumes a tick even when its guard fails.
+- `advance: 'on-success'` can model retry-until-valid behavior.
+- `advance: 'until-success'` is a retry policy that needs an explicit bound or diagnostic for possible livelock.
+- `once`, `loop`, `repeat-n`, and `hold` distinguish finite tapes from repeating actors and waiting programs.
+
+An empty sequence, an exhausted finite sequence, and a held sequence need defined behavior; modulo arithmetic must never silently choose that behavior.
+
+### 2.4 Scan selection and arbitration
+
+```ts
+type ScanPolicy = {
+  selection: 'first-match' | 'all-match' | 'priority' | 'exclusive'
+  conflict: 'reject' | 'merge' | 'declared-order'
+}
 ```
-type Firing = { list: DirectiveList; directive: Directive; tick: Clock }
-type TraceEntry = { tick: Clock; source: string; op: string; ok: boolean; reason?: string }
-type GuardedTransition = (world: World, firing: Firing) =>
-  | { ok: true;  world: World; trace: TraceEntry }
-  | { ok: false; world: World /* unchanged */; trace: TraceEntry }
+
+This vocabulary is provisional, but the distinction is required by the evidence. The Dam's rule cascade selects the first matching threshold (`experiments/cross-model-deepseek/demo-05/index.html:76-90`); it is not equivalent to firing every matching rule. Other puzzles may intentionally apply all matches, choose the highest priority, or reject mutually exclusive matches. If two accepted proposals write the same cell, conflict handling must be declared rather than inherited from object-spread order or iteration order.
+
+### 2.5 Transition proposals
+
+```ts
+type Proposal = {
+  source: string
+  outcome: 'success' | 'failure'
+  consumesTick: boolean
+  patch: Record<string, unknown>
+  reason?: string
+}
 ```
-**Necessity proof:** every single mutation found across all 40 demos — with or without an explicit `say()` log — factors through "check a precondition, then mutate-or-reject." Firefly's arrival check (`if(d<4)`), Prism Burrow's permutation check, Dam's burst check (`if(level>BURST)`), blind-batch-001's adjacency guards: same shape every time. This is the one true *behavioral* atom; everything else in the set is passive data around it.
 
-### 1.5 `Log`
+`GuardedTransition` remains a useful proposal shape for state-gated actions, but it is not the only behavior in the corpus. A pure query, a chain fold, and a topology propagation pass do not all need the same guard/trace wrapper. In particular, `outcome`, `consumesTick`, cursor advancement, and termination must not be inferred from one boolean field.
+
+### 2.6 `Query` / `DerivedView` versus identity-bearing derived state
+
+The earlier `StateCell(derived)` model is one possible implementation. A pure query may be cleaner when a value has no identity, storage, invalidation policy, or historical event of its own:
+
+```ts
+type Query<S, V> = (state: Readonly<S>, clock: Clock) => V
 ```
-type Log =
-  | { authority: 'observational'; entries: TraceEntry[] }                    // side-channel audit trail; State is source of truth
-  | { authority: 'fold'; entries: TraceEntry[]; replay: (uptoTick: Clock) => World }  // Log IS the source of truth
-```
-**Necessity proof this is a primitive, not a detail of `GuardedTransition`:** `cross-model-deepseek`'s `SIM.run(rules, moves, maxT)` empirically re-derives *all* of `{level, opening, streak, gate, px}` from scratch on every single invocation — the log (rules + timestamped moves) is the only thing that persists between calls; there is no mutable `World` object living between ticks at all. This is a different, load-bearing architectural commitment from kimi's direct-mutation style (`fx += ...` persists in place), not a cosmetic variant. Which mode a puzzle picks changes its rewind cost from O(1) (observational, no rewind) to O(T) per query (fold) — a real, user-facing capability difference (see `FRAMEWORK_ADVERSARIAL_REVIEW.md` §2).
 
-### 1.6 `LawCell` — probationary 6th primitive, self-collapses
-Proposed to explain `gAt(t)`/`posAt(t)`/ring-radius. Test: is `gAt(t)` (gravity-law lookup over `segs=[{a,b,g}]`) expressible as `StateCell(derived)`? Yes — it is a formula of `Clock` alone, no stored dependency, trivially derived. Is `posAt(t)` (Echo Twin Waltz) expressible the same way? Yes — it is `StateCell(derived)` whose formula happens to fold over a **`Directive` list with an always-true guard** (no rejection is possible; every segment always applies within its range). Is the general case — "replay a whole `Directive(sequence)` program to answer 'state at any t'" — reducible? Yes: that is exactly `Log{authority:'fold'}.replay(t)`, already in the set.
-**Verdict: `LawCell` does not survive as a 6th primitive.** It is fully absorbed as `StateCell(derived)` for closed-form cases and as `Log.replay(t)` for anything requiring a walk over guarded history. **Final count: 5.**
+Examples include `posAt(t)`, gravity lookup, and a view of the currently lit Moss cells. An identity-bearing derived value may still be useful for a named sensor or a renderer-facing readout. The corpus does not yet justify choosing one model everywhere. Same-tick facts such as “both presses succeeded” may need an explicit tick result or event aggregate rather than a formula that reads another derived value.
 
----
+### 2.7 `Structure/Topology` candidate
 
-## 2. Orthogonality Proof (pairwise)
+The expanded evidence requires a structure-shaped candidate to remain in the analysis:
 
-| | Clock | StateCell | Directive | GuardedTransition | Log |
-|---|---|---|---|---|---|
-| **Clock** | — | indexes derived formulas; does not store values | indexes `pc`/scan timing; does not hold instructions | provides `tick` for `TraceEntry`; does not gate anything | indexes entries; does not interpret them |
-| **StateCell** | | — | can *hold* a Directive-shaped value (Replay Printshop) but is not itself ordered/tagged | is what a transition reads/writes; carries no behavior of its own | is what a trace's `before/after` would diff; a cell cannot append to a log itself |
-| **Directive** | | | — | is *fired* by a transition; carries no guard logic itself | is what a `source`/`op` trace field names; a directive list cannot self-record |
-| **GuardedTransition** | | | | — | is the only thing permitted to produce a `TraceEntry`; a log cannot decide ok/not-ok itself |
-| **Log** | | | | | — |
+- Mimic Moss traverses player-authored neighboring plants with synchronous propagation; distance controls arrival and plant type changes color (`experiments/cross-model-deepseek/demo-06/index.html:87-105`).
+- Programming Spider creates persistent edges by a body action and later lets rain use the resulting web (`experiments/blind-batch-001/demo-07/index.html:4`; `DESIGN.md:9-23`).
+- Circuit Golem evaluates editable eye-to-arm connection mappings (`experiments/cross-model-claude-sonnet-5/demo-06/index.html:71-85,122-169`).
+- Prism Burrow folds an ordered transformation chain through a color table (`experiments/cross-model-kimi-k3/demo-06/index.html:98-102,176-182`).
 
-No cell in the table collapses two primitives into each other — each has a capability the others structurally lack. This closes the orthogonality requirement.
+These may be separate typed domains rather than one graph API. The candidate is therefore a question about reusable semantics, not a mandate to build a general graph engine.
 
----
+### 2.8 History / Replay / Snapshot service
 
-## 3. Twelve Mechanic Families — Composition Table
+DeepSeek's `SIM.run` demonstrates that replay-from-input is a useful authority strategy (`experiments/cross-model-deepseek/demo-05/index.html:76-104`). It does not prove that an append-only `Log` is a gameplay atom. History, replay, snapshots, rule-versioning, and trace collection should be treated as optional engine services until a probe shows that a puzzle cannot be expressed without them.
 
-| # | Family | Composition (primitives used) | Evidence |
-|---|---|---|---|
-| 1 | Sequential command walk | `Directive(sequence)` + `StateCell(stored: position)` + `GuardedTransition(move)` | Firefly Lamplighter, March the Oaf, all `blind-batch-001` |
-| 2 | Adjacency/state-gated world mutation | `GuardedTransition` alone, composed with #1's position cell | `blind-batch-001` (all 9), Clay Transcriber |
-| 3 | Carried memory / inventory | `StateCell(stored, actor-namespaced scalar or bounded array)` + `GuardedTransition` (capacity guard on write, presence guard on read) | Echo Concierge, Cloud Doctor, Phase Clockmaker |
-| 4 | Runtime-only-known conditional branch | `StateCell(stored: alias index)` + `Directive(scan)` + `GuardedTransition` | Mole Sensor Greenhouse, Blind Cave Fish Sensor Network |
-| 5 | Cyclic repetition / loop | `Directive(sequence)` with `pc_next = (pc+1) % length` — a `Clock`-relative addressing mode, no new primitive | Firefly Lamplighter, Windup Sentries |
-| 6 | Declarative wiring / logic gates | `Directive(scan)` + `StateCell(derived: boolean formula)` | Blind Cave Fish, Circuit Golem Innards |
-| 7 | Finite resource budget / overflow fail | `StateCell(stored, bounded scalar)` + `GuardedTransition` (capacity breach ⇒ fail trace) | Phase Clockmaker, Ink Cleaner, Last Light Irrigation |
-| 8 | Scheduled one-off trigger (`at T → X`) | `Directive(scan)` with a single-shot guard `clock == T` — degenerate case of #6 | Mole Sensor's `sched[]`, Ladybug Ledger's `releases[]` |
-| 9 | Piecewise law-over-time (gravity, inflow, wave) | `StateCell(derived)` folding a `Directive` list with an always-true guard | Gravity Dial Hollow (`gAt`), Dam's `inflow(t)`, Convergence Bells' ring radius |
-| 10 | Multi-actor temporal echo / replay | ≥2 `Directive(sequence)` lists sharing one `Clock` (in lockstep or offset), cross-referenced inside each other's `GuardedTransition` guard | Echo Twin Waltz, Echo Canyon, Echo Chamber Bridge |
-| 11 | Continuous coupled dynamics (predator-prey, ecology) | ≥2 `StateCell`s (stored, always-true-guard transition) whose update formula reads each other's *previous-tick* committed value only | Ladybug Ledger, Pond Algae Equilibrium |
-| 12 | Nested / higher-order program (record-then-replay-as-subroutine) | `StateCell(stored)` whose value **is** a `Directive` array, later iterated inside another `GuardedTransition`'s effect | Replay Printshop (`s.record` → `replay` command) |
+## 3. Composition catalogue
 
-No family in this table required inventing a 6th primitive or a mode not already declared in §1. This is the composability proof the Orchestrator asked Gamma and Alpha to jointly certify.
+| Family | Composition observed | Status after Round 3 |
+|---|---|---|
+| Sequential command walk | optional `Directive(sequence)` + state + transition proposals | well-supported, policy details required |
+| Failed action that consumes time | transition outcome + `consumesTick:true` + unchanged cursor | directly required by Echo Chamber Bridge (`experiments/cross-model-claude-sonnet-5/demo-03/index.html:68-72`) |
+| Finite, looping, or repeated execution | sequence data + explicit termination policy | required distinction; not inferred from modulo |
+| Continuous rule scan | `Directive(scan)` or a RuleSet + explicit selection/arbitration | well-supported, but first/all/priority are distinct |
+| First-match threshold cascade | ordered rules + `selection:'first-match'` | observed in Dam |
+| Boolean wiring | named state + pure query | observed in Blind Cave Fish and related demos |
+| Sensor aliasing | stored selector + dereferencing query | observed in Mole Sensor |
+| Piecewise law over time | pure query or rule fold over clock | observed; Query versus derived state remains open |
+| Multi-actor temporal echo | shared clock + multiple tracks or historical query | composition pattern; History service boundary open |
+| Continuous coupled dynamics | state updates from the same frozen prior state | supported by ecology/flux demos; effect conflict policy required |
+| Persistent edge construction | transition mutates a structure value; later query/propagation reads it | observed in Programming Spider; general structure API open |
+| Topology propagation and path delay | structure traversal + distance-aware query/effect | observed in Mimic Moss; reusable service open |
+| Connection mapping | authored map + event-driven query | observed in Circuit Golem; relation to topology open |
+| Ordered transformation chain | authored chain + deterministic fold + visible intermediates | observed in Prism Burrow; domain boundary open |
+| Recorded sub-sequence | state value holds data later iterated by an effect | observed in Replay Printshop; not a separate replay atom |
+
+This table demonstrates reuse patterns, not universal reduction. The four structure families are the reason the earlier flat-rule-only conclusion is withdrawn.
+
+## 4. Falsification matrix
+
+| Question | Evidence to inspect | Failure condition |
+|---|---|---|
+| Is Structure/Topology reusable? | Moss, Spider, Golem, Prism source and design | one shared contract forces unrelated domains into misleading graph semantics |
+| Is Directive a universal authoring IR? | action plans versus topology, mapping, and chain UIs | player-authored structures lose their natural representation or require tautological `{op,args}` wrappers |
+| Is Log core? | incremental runs versus `SIM.run` replay and scrub requirements | gameplay semantics depend on logging even when no history feature is requested |
+| Query or derived state? | `posAt`, `gAt`, Moss light view, same-tick aggregates | formulas need identity/history/event semantics that a pure query cannot supply, or derived cells add ceremony with no benefit |
+| How does sequence progress? | Firefly, March, Echo Chamber | failed actions, finite queues, retry, and loop behavior cannot be represented explicitly |
+| How does scan arbitration work? | Dam and multi-rule probes | matching rules have ambiguous selection or implicit patch-order selection |
+| What survives scrubbing? | historical state versus achievements/unlocks | a displayed historical tick changes or persists without an explicit event and boundary |
+
+## 5. Current status
+
+The fixed-step, frozen-prior-state, deterministic-commit discipline is the strongest shared kernel hypothesis. `Clock`, simulation state, proposal/effect flow, authoring representations, structure semantics, queries, and history services must still be separated by evidence. The primitive count remains undecided, and framework probes should wait until the matrix above has explicit answers.
