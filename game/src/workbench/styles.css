@@ -1,0 +1,21 @@
+.workbench-card { display:flex; flex-direction:column; min-height:100%; }
+.workbench-title { margin:0; color:#f8e4bb; font:700 1.35rem/1.1 Georgia,serif; }
+.workbench-description,.workbench-hint,.workbench-message { color:#a7b6b7; font-size:.88rem; line-height:1.45; }
+.unlocked-line,.section-label { color:#d2aa70; font-size:.68rem; letter-spacing:.16em; text-transform:uppercase; }
+.authoring-area { min-height:180px; }
+.ability-panel { display:flex; flex-direction:column; gap:4px; margin-top:12px; padding:12px; border:1px solid #6b5d3f; border-radius:10px; background:#26352f; color:#d2aa70; font-size:.66rem; letter-spacing:.12em; }
+.ability-panel strong { color:#d7e1cf; font-size:.78rem; font-weight:500; letter-spacing:0; }
+.sequence-editor { display:flex; flex-direction:column; gap:7px; }
+.command-row { display:grid; grid-template-columns:24px 1fr 28px 28px 28px; gap:5px; align-items:center; }
+.command-number { color:#758d8b; font:700 .76rem monospace; text-align:center; }
+.command-select,.icon-button,.add-command,.workbench-controls button { border:1px solid #3d5a5b; border-radius:8px; background:#183033; color:#e9efd9; min-height:32px; }
+.command-select { padding:0 8px; }
+.icon-button { color:#b9c9bd; cursor:pointer; }
+.icon-button:hover,.add-command:hover { border-color:#d2aa70; color:#f8e4bb; }
+.add-command { margin-top:8px; border-style:dashed; cursor:pointer; width:100%; }
+.workbench-controls { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:auto; padding-top:16px; }
+.workbench-controls button { cursor:pointer; font-weight:700; }
+.run-button { background:#d2aa70 !important; border-color:#d2aa70 !important; color:#1e2b2d !important; }
+.step-button { border-color:#d2aa70 !important; color:#f8e4bb !important; }
+.reset-button { background:transparent !important; }
+.next-button { margin-top:10px; border:0; background:transparent; color:#d2aa70; cursor:pointer; text-align:left; padding:8px 0; }
