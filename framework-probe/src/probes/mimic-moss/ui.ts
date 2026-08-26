@@ -33,7 +33,7 @@ export function mountMossUi(root: HTMLElement, handlers: MossUiHandlers): void {
   const hint = document.createElement('p');
   hint.className = 'hint';
   hint.textContent =
-    'Click the grid to place/remove moss before pressing Grow. Arrow keys move the explorer while it runs. ' +
+    'Click the grid to place/remove moss before pressing Grow. ' +
     'Wire a short plain path (arrives RED) and a longer dyed path (arrives BLUE) to the flower.';
 
   const controls = document.createElement('div');

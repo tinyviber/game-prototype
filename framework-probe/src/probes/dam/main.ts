@@ -2,9 +2,10 @@ import { createPixiHost } from '../../rendering/pixi-host';
 import { createTickDriver } from '../../rendering/tick-driver';
 import { createDamRenderer, type DamView } from './render';
 import { mountDamUi } from './ui';
-import { createDamStep, damIntentAt, initialDamState } from './sim';
+import { createDamRun } from './sim';
 import type { DamConfig, DamState, ThresholdRule } from './types';
-import { view as projectView } from '../../core/view';
+import { advance } from '../../core/kernel';
+import { view as projectView } from '../../services/presentation';
 
 async function main(): Promise<void> {
   const stageEl = document.querySelector<HTMLDivElement>('#stage')!;
@@ -22,7 +23,8 @@ async function main(): Promise<void> {
     return { rules, initialLevel: 48, initialOpening: 0 };
   }
 
-  let state: DamState = initialDamState(configNow());
+  let activeRun = createDamRun(configNow());
+  let state: DamState = activeRun.initialState;
 
   function render(tick: number): void {
     const projected: DamView = projectView(state, tick, {
@@ -42,7 +44,7 @@ async function main(): Promise<void> {
 
   function onTick(tick: number): void {
     const wasGate = state.gate;
-    state = createDamStep(configNow())(state, tick, damIntentAt(tick));
+    state = advance(state, tick, activeRun.inputSource(tick), activeRun.step);
     tickEl.textContent = String(tick);
     render(tick);
     if (state.gate && !wasGate) logLine(`t${tick}: the wheel hums steady — the gate grinds OPEN.`);
@@ -58,7 +60,8 @@ async function main(): Promise<void> {
 
   function reset(): void {
     driver.reset();
-    state = initialDamState(configNow());
+    activeRun = createDamRun(configNow());
+    state = activeRun.initialState;
     tickEl.textContent = '0';
     render(0);
     logEl.textContent = 'The reservoir is at 48. Somewhere downstream a wheel waits for steady water…';

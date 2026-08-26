@@ -1,4 +1,4 @@
-import type { IntentSource, StepFn, Tick } from '../../core/types';
+import type { IntentSource, RunDefinition, StepFn, Tick } from '../../core/types';
 import type { EchoConfig, EchoIntent, EchoState, Instr } from './types';
 
 export function initialEchoState(): EchoState {
@@ -18,9 +18,10 @@ function stepLane(instr: Instr | undefined, pos: number, plate: number): { pos: 
 }
 
 export function createEchoStep(config: EchoConfig): StepFn<EchoState, EchoIntent> {
+  const snapshot: EchoConfig = { ...config, echoProgram: [...config.echoProgram], liveProgram: [...config.liveProgram] };
   return (prev, _tick, intent) => {
-    const echo = stepLane(intent.echoInstr, prev.echoPos, config.echoPlate);
-    const live = stepLane(intent.liveInstr, prev.livePos, config.livePlate);
+    const echo = stepLane(intent.echoInstr, prev.echoPos, snapshot.echoPlate);
+    const live = stepLane(intent.liveInstr, prev.livePos, snapshot.livePlate);
     return {
       echoPos: echo.pos,
       livePos: live.pos,
@@ -38,10 +39,16 @@ export function createEchoStep(config: EchoConfig): StepFn<EchoState, EchoIntent
  * (a no-op) forever — finite sequences terminate, they never wrap via modulo.
  */
 export function echoIntentAt(config: EchoConfig): IntentSource<EchoIntent> {
+  const snapshot: EchoConfig = { ...config, echoProgram: [...config.echoProgram], liveProgram: [...config.liveProgram] };
   return (tick: Tick) => ({
-    echoInstr: config.echoProgram[tick - 1],
-    liveInstr: config.liveProgram[tick - 1],
+    echoInstr: snapshot.echoProgram[tick - 1],
+    liveInstr: snapshot.liveProgram[tick - 1],
   });
+}
+
+export function createEchoRun(config: EchoConfig): RunDefinition<EchoState, EchoIntent> {
+  const snapshot: EchoConfig = { ...config, echoProgram: [...config.echoProgram], liveProgram: [...config.liveProgram] };
+  return { initialState: initialEchoState(), step: createEchoStep(snapshot), inputSource: echoIntentAt(snapshot) };
 }
 
 /** Same-tick aggregate: both lanes are ordinary current-tick fields, so "did both press right

@@ -2,9 +2,10 @@ import { createPixiHost } from '../../rendering/pixi-host';
 import { createTickDriver } from '../../rendering/tick-driver';
 import { createSporeRenderer, type SporeView } from './render';
 import { mountSporeUi } from './ui';
-import { createSporeStep, initialSporeState, sporeIntentAt } from './sim';
+import { createSporeRun } from './sim';
 import type { CapType, NodeId, SporeConfig, SporeState } from './types';
-import { view as projectView } from '../../core/view';
+import { advance } from '../../core/kernel';
+import { view as projectView } from '../../services/presentation';
 
 async function main(): Promise<void> {
   const stageEl = document.querySelector<HTMLDivElement>('#stage')!;
@@ -41,8 +42,9 @@ async function main(): Promise<void> {
     };
   }
 
-  let state: SporeState = initialSporeState();
   let activeConfig = configNow();
+  let activeRun = createSporeRun(activeConfig);
+  let state: SporeState = activeRun.initialState;
   let renderer = createSporeRenderer(app, activeConfig, { spouts, mushrooms, sockets, positions });
 
   function render(tick: number): void {
@@ -61,7 +63,7 @@ async function main(): Promise<void> {
   }
 
   function onTick(tick: number): void {
-    state = createSporeStep(activeConfig)(state, tick, sporeIntentAt(tick));
+    state = advance(state, tick, activeRun.inputSource(tick), activeRun.step);
     tickEl.textContent = String(tick);
     render(tick);
     if (state.ended) {
@@ -80,9 +82,10 @@ async function main(): Promise<void> {
 
   function reset(): void {
     driver.reset();
-    state = initialSporeState();
-    tickEl.textContent = '0';
     activeConfig = configNow();
+    activeRun = createSporeRun(activeConfig);
+    state = activeRun.initialState;
+    tickEl.textContent = '0';
     app.stage.removeChildren();
     renderer = createSporeRenderer(app, activeConfig, { spouts, mushrooms, sockets, positions });
     render(0);

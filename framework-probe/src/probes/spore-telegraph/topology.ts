@@ -23,8 +23,8 @@ export interface Arrival {
 
 /**
  * Advances every in-flight pulse by one tick, splitting them into "still travelling" and
- * "arrived this tick". Arrival order matches pulse-creation order, which is what makes
- * same-tick multi-arrival resolution deterministic without needing a conflict policy.
+ * "arrived this tick". Spore's simulation groups arrivals by target and resolves collisions;
+ * this helper deliberately makes no winner selection based on array order.
  */
 export function advancePulses(pulses: readonly Pulse[]): { traveling: Pulse[]; arrivals: Arrival[] } {
   const traveling: Pulse[] = [];

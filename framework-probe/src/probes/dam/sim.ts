@@ -1,4 +1,4 @@
-import type { IntentSource, StepFn, Tick } from '../../core/types';
+import type { IntentSource, RunDefinition, StepFn, Tick } from '../../core/types';
 import type { DamConfig, DamIntent, DamState, ThresholdRule } from './types';
 
 const AREA = 4;
@@ -38,10 +38,11 @@ export function initialDamState(config: DamConfig): DamState {
 }
 
 export function createDamStep(config: DamConfig): StepFn<DamState, DamIntent> {
+  const snapshot: DamConfig = { ...config, rules: config.rules.map((rule) => ({ ...rule })) };
   return (prev, tick) => {
     if (prev.burst) return prev; // terminal latch: a burst dam does not keep simulating
 
-    const opening = scanRules(config.rules, prev.level, prev.opening);
+    const opening = scanRules(snapshot.rules, prev.level, prev.opening);
     const outflow = Math.max(0, (opening / 100) * OUTFLOW_COEFFICIENT * prev.level);
     const rawLevel = prev.level + (inflow(tick) - outflow) / AREA;
     const burst = rawLevel > BURST_LEVEL;
@@ -56,3 +57,8 @@ export function createDamStep(config: DamConfig): StepFn<DamState, DamIntent> {
 }
 
 export const damIntentAt: IntentSource<DamIntent> = () => undefined;
+
+export function createDamRun(config: DamConfig): RunDefinition<DamState, DamIntent> {
+  const snapshot: DamConfig = { ...config, rules: config.rules.map((rule) => ({ ...rule })) };
+  return { initialState: initialDamState(snapshot), step: createDamStep(snapshot), inputSource: damIntentAt };
+}

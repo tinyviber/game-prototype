@@ -1,13 +1,8 @@
-import type { Tick } from './types';
+import type { Tick } from '../../core/types';
 
-/** A pure read of simulation state. Queries run after a tick commits and never mutate. */
+/** A pure projection helper for presentation; it is not a simulation primitive. */
 export type Query<S, V> = (state: S, tick: Tick) => V;
 
-/**
- * Runs a named bag of explicit queries against one state, producing exactly the view a
- * renderer needs. The projection is authored at each level-specific entry point, so a
- * renderer never needs to know that probe's simulation state shape.
- */
 export function view<S, Q extends Record<string, Query<S, unknown>>>(
   state: S,
   tick: Tick,
