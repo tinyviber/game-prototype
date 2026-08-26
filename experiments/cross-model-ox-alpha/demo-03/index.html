@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Convergence Bells — cross-model ox-alpha</title>
+<style>
+  :root{ --bg:#12141f; --panel:#191c2b; --line:#2e3350; --ink:#e6e8f5; --dim:#9096b8; --accent:#ffd166;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{ background:radial-gradient(1100px 650px at 50% -12%, #20243c 0%, var(--bg) 60%);
+        color:var(--ink); font-family:"Avenir Next","Trebuchet MS",system-ui,sans-serif;
+        display:flex;flex-direction:column;align-items:center;padding:16px;min-height:100vh;}
+  header{text-align:center;margin-bottom:8px;}
+  header h1{font-size:25px;color:#ffe9c9;letter-spacing:.05em;}
+  header p{color:var(--dim);font-size:13px;margin-top:3px;}
+  .stage-wrap{position:relative;}
+  svg#stage{display:block;background:#171a2a;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.55);}
+  .panel{width:800px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px 16px;margin-top:12px;}
+  .panel h2{font-size:13px;color:var(--accent);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px;}
+  #grid{display:grid;gap:3px;align-items:center;}
+  .rowlab{display:flex;align-items:center;gap:6px;font-size:12px;width:118px;color:var(--ink);}
+  .dot{width:11px;height:11px;border-radius:50%;display:inline-block;}
+  .ticknum{font-size:9px;color:var(--dim);text-align:center;height:14px;}
+  .cell{height:22px;border-radius:5px;background:#0d1020;cursor:pointer;position:relative;}
+  .cell:hover{outline:1px solid var(--accent);}
+  .cell.strike{border-radius:8px;}
+  .cell.cur{outline:2px solid #fff;}
+  .flag{position:absolute;top:-4px;left:50%;transform:translateX(-50%) rotate(180deg);width:0;height:0;
+        border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #fff;}
+  #controls{display:flex;align-items:center;gap:14px;margin-top:12px;}
+  button.big{font-family:inherit;font-size:15px;padding:9px 22px;border-radius:10px;border:none;cursor:pointer;font-weight:600;}
+  .primary{background:#ffd166;color:#3a2a05;box-shadow:0 4px 0 #b8892c;}
+  .primary:active{transform:translateY(2px);box-shadow:0 2px 0 #b8892c;}
+  .ghostb{background:#232840;color:var(--ink);border:1px solid var(--line);}
+  #status{font-size:14px;color:var(--dim);flex:1;min-height:20px;}
+  .banner{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+          pointer-events:none;opacity:0;transition:opacity .5s;text-align:center;}
+  .banner.show{opacity:1;}
+  .banner .big{font-size:32px;color:#ffe9b8;text-shadow:0 4px 22px rgba(255,200,80,.65);font-weight:700;}
+  .banner .sub{font-size:15px;color:#dbe2f8;margin-top:8px;}
+  .legend{font-size:12px;color:var(--dim);margin-top:8px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>The Convergence Bells</h1>
+  <p>The mountain shrine wakes only when five tones land on it in the <em>same instant</em> — one golden chord. Schedule the striking.</p>
+</header>
+
+<div class="stage-wrap">
+  <svg id="stage" viewBox="0 0 800 430" width="800" height="430"></svg>
+  <div class="banner" id="banner"><div class="big">CHORD.</div><div class="sub" id="bSub"></div></div>
+</div>
+
+<div class="panel">
+  <h2>Striking Timetable — tap to set / clear each bell's beat (one strike per bell)</h2>
+  <div id="grid"></div>
+  <div id="controls">
+    <button class="big primary" id="runBtn">🔔 Toll the Bells</button>
+    <button class="big ghostb" id="resetBtn">↺ Reset</button>
+    <div id="status">The old habit strikes everything on beat zero…</div>
+  </div>
+  <div class="legend">White ▼ flags mark when each tone actually reached the shrine last run. The violet bell sits in slow mist.</div>
+</div>
+
+<script>
+"use strict";
+/* ---------- bells ---------- */
+const BELLS=[
+  {name:"Copper", c:"#e8a25c", x:170, y:160, v:45},
+  {name:"Iron",   c:"#9aa7c8", x:700, y:120, v:45},
+  {name:"Bronze", c:"#d8b06a", x:215, y:350, v:45},
+  {name:"Silver", c:"#cfe0ee", x:660, y:370, v:45},
+  {name:"Mistbell",c:"#b48ae8", x:450, y:40,  v:24},
+];
+const SHRINE={x:400,y:265};
+BELLS.forEach(b=>{ b.dist=Math.hypot(b.x-SHRINE.x,b.y-SHRINE.y); b.delay=Math.ceil(b.dist/b.v);
+  if(b.name==="Mistbell") b.delay=Math.ceil(b.dist/(b.v)); });
+const TICKS=26, ENDT=40;
+
+/* ---------- svg ---------- */
+const NS="http://www.w3.org/2000/svg";
+function S(tag,attrs,parent){const el=document.createElementNS(NS,tag);
+  for(const k in attrs)el.setAttribute(k,attrs[k]);if(parent)parent.appendChild(el);return el;}
+const stage=document.getElementById("stage");
+let defs=S("defs",{},stage);
+defs.innerHTML=`<radialGradient id="skyg" cx=".5" cy=".2" r="1"><stop offset="0" stop-color="#242a48"/><stop offset="1" stop-color="#14172a"/></radialGradient>
+<radialGradient id="mist"><stop offset="0" stop-color="#8f78d8" stop-opacity=".38"/><stop offset="1" stop-color="#8f78d8" stop-opacity="0"/></radialGradient>`;
+S("rect",{x:0,y:0,width:800,height:430,fill:"url(#skyg)"},stage);
+for(let i=0;i<50;i++)S("circle",{cx:Math.random()*800,cy:Math.random()*300,r:Math.random()*1.3+.3,fill:"#cdd4f5",opacity:Math.random()*.6+.15},stage);
+// ridges
+S("path",{d:"M0,300 L120,210 L240,290 L360,205 L500,295 L640,215 L800,305 L800,430 L0,430 Z",fill:"#1b1f36"},stage);
+S("path",{d:"M0,360 Q200,320 400,365 T800,355 L800,430 L0,430 Z",fill:"#161a2e"},stage);
+// mist zone
+S("ellipse",{cx:430,cy:95,rx:130,ry:75,fill:"url(#mist)"},stage);
+S("text",{x:430,y:160,"text-anchor":"middle","font-size":11,fill:"#a892e0","font-style":"italic"},stage).textContent="slow mist";
+// shrine
+const shrineG=S("g",{},stage);
+shrineG.innerHTML=`
+  <path d="M ${SHRINE.x-34},${SHRINE.y+42} h68 l-8,-12 h-52 Z" fill="#2c3152"/>
+  <rect x="${SHRINE.x-20}" y="${SHRINE.y}" width="40" height="32" rx="4" fill="#343a60"/>
+  <path d="M ${SHRINE.x-28},${SHRINE.y} L ${SHRINE.x},${SHRINE.y-26} L ${SHRINE.x+28},${SHRINE.y} Z" fill="#3d4470"/>
+  <circle id="crystal" cx="${SHRINE.x}" cy="${SHRINE.y+14}" r="9" fill="#454c80"/>
+  <text x="${SHRINE.x}" y="${SHRINE.y+62}" text-anchor="middle" font-size="11" fill="#8890bb">the sleeping shrine</text>`;
+const crystal=shrineG.querySelector("#crystal");
+// bells
+const bellEls=[];
+BELLS.forEach((b,i)=>{
+  const g=S("g",{},stage);
+  S("line",{x1:b.x,y1:b.y-46,x2:b.x,y2:b.y-18,stroke:"#3a4066","stroke-width":4},g);
+  const swing=S("g",{},g);
+  swing.innerHTML=`<path d="M ${b.x-13},${b.y-18} q 13,-9 26,0 l -4,20 q -9,6 -18,0 Z" fill="${b.c}" stroke="#10132a" stroke-width="2"/>
+    <circle cx="${b.x}" cy="${b.y+6}" r="3.5" fill="#10132a"/>`;
+  S("text",{x:b.x,y:b.y+26,"text-anchor":"middle","font-size":11,fill:"#aab1d8"},g).textContent=b.name;
+  bellEls.push({g,swing});
+});
+function tiloSVG(x,y,scale,mood){
+  const py=mood==="sad"?1:mood==="cheer"?-2:-1;
+  const mouth = mood==="cheer" ? `<path d="M -4,-2 Q 0,4 4,-2 Z" fill="#123326"/>`
+    : mood==="sad" ? `<path d="M -3,1 Q 0,-2 3,1" fill="none" stroke="#123326" stroke-width="1.6" stroke-linecap="round"/>`
+    : `<path d="M -3,-1 Q 0,2 3,-1" fill="none" stroke="#123326" stroke-width="1.6" stroke-linecap="round"/>`;
+  return `<g transform="translate(${x},${y}) scale(${scale})">
+    <ellipse cx="-7" cy="0" rx="6" ry="3.4" fill="#3f9a70"/><ellipse cx="7" cy="0" rx="6" ry="3.4" fill="#3f9a70"/>
+    <ellipse cx="-17" cy="-10" rx="4.4" ry="6.4" fill="#69d19c" stroke="#1e5b41" stroke-width="1.6" transform="rotate(18 -17 -10)"/>
+    <ellipse cx="17" cy="-10" rx="4.4" ry="6.4" fill="#69d19c" stroke="#1e5b41" stroke-width="1.6" transform="rotate(-18 17 -10)"/>
+    <ellipse cx="0" cy="-12" rx="16" ry="15" fill="#69d19c" stroke="#1e5b41" stroke-width="2"/>
+    <ellipse cx="0" cy="-7" rx="9.5" ry="7.5" fill="#8fe7bc"/>
+    <path d="M 0,-26 C 2,-34 8,-37 12,-38" fill="none" stroke="#1e5b41" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="13" cy="-39" r="4" fill="#ffc857" stroke="#1e5b41" stroke-width="1.5"/>
+    <ellipse cx="-6" cy="-15" rx="5" ry="6.2" fill="#fff"/><ellipse cx="6" cy="-15" rx="5" ry="6.2" fill="#fff"/>
+    <circle cx="-5" cy="${-15+py}" r="2.6" fill="#132b20"/><circle cx="7" cy="${-15+py}" r="2.6" fill="#132b20"/>
+    ${mouth}</g>`;
+}
+const tiloHolder=S("g",{},stage);
+tiloHolder.innerHTML=tiloSVG(SHRINE.x+56,SHRINE.y+52,.9,"happy");
+
+/* ---------- timeline UI ---------- */
+const gridEl=document.getElementById("grid");
+gridEl.style.gridTemplateColumns=`118px repeat(${TICKS},1fr)`;
+const numRow=[document.createElement("div")];
+for(let t=0;t<TICKS;t++){const d=document.createElement("div");d.className="ticknum";
+  d.textContent=t%5===0?t:"";numRow.push(d);}
+numRow.forEach(d=>gridEl.appendChild(d));
+let strikes=Array(BELLS.length).fill(null); // tick index or null
+const cellRefs=[];
+BELLS.forEach((b,i)=>{
+  const lab=document.createElement("div");lab.className="rowlab";
+  lab.innerHTML=`<span class="dot" style="background:${b.c}"></span>${b.name}`;
+  gridEl.appendChild(lab);
+  cellRefs[i]=[];
+  for(let t=0;t<TICKS;t++){
+    const d=document.createElement("div");d.className="cell";d.dataset.t=t;
+    d.onclick=()=>{ if(running)return;
+      strikes[i]=strikes[i]===t?null:t; paintGrid(); };
+    gridEl.appendChild(d);cellRefs[i][t]=d;
+  }
+});
+function paintGrid(curT=-1){
+  BELLS.forEach((b,i)=>{for(let t=0;t<TICKS;t++){
+    const d=cellRefs[i][t];const isCur=(t===curT);
+    let cls="cell"+(isCur?" cur":"");
+    let bg="";
+    if(strikes[i]===t){cls+=" strike";bg=b.c;}
+    d.className=cls;d.style.background=bg;
+    // clear old flags except keep during idle after run
+    const f=d.querySelector(".flag"); if(f&&!(results[i]!=null&&results[i]===t))f.remove();
+    if(results[i]===t&&!f){const fl=document.createElement("div");fl.className="flag";
+      fl.style.borderTopColor=b.c;d.appendChild(fl);}
+  }});
+}
+/* ---------- audio ---------- */
+let AC=null;
+function note(freq,dur=.18,gain=.05){
+  try{
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    const o=AC.createOscillator(),g=AC.createGain();
+    o.type="sine";o.frequency.value=freq;o.connect(g);g.connect(AC.destination);
+    const t0=AC.currentTime;
+    g.gain.setValueAtTime(gain,t0);g.gain.exponentialRampToValueAtTime(.0001,t0+dur);
+    o.start(t0);o.stop(t0+dur+.02);
+  }catch(e){}
+}
+
+/* ---------- simulation ---------- */
+let running=false,timer=null,clockT=0,arrived=[],results=[],spawned=[];
+const statusEl=document.getElementById("status");
+function setStatus(s){statusEl.textContent=s;}
+
+function strikeBell(i){
+  const b=BELLS[i];
+  bellEls[i].swing.animate(
+    [{transform:`rotate(0deg)`},{transform:`rotate(-14deg)`},{transform:`rotate(12deg)`},{transform:`rotate(-6deg)`},{transform:`rotate(0deg)`}],
+    {duration:700,transformOrigin:`${b.x}px ${b.y-18}px`});
+  note(220+i*60,.25,.04);
+  spawned.push({i,start:clockT});
+  const ring=S("circle",{cx:b.x,cy:b.y,r:6,fill:"none",stroke:b.c,"stroke-width":3,opacity:.9},stage);
+  spawned[spawned.length-1].el=ring;
+}
+function stepSim(){
+  clockT++;
+  paintGrid(clockT%TICKS);
+  BELLS.forEach((b,i)=>{ if(strikes[i]===clockT-1) strikeBell(i); });
+  // expand rings & detect arrival
+  for(const s of spawned){
+    const b=BELLS[s.i];
+    const age=clockT-s.start;
+    const r=6+b.v*age;
+    s.el.setAttribute("r",r);
+    s.el.setAttribute("opacity",String(Math.max(.08,.85-age*.012)));
+    if(!arrived[s.i] && age>=b.delay){
+      arrived[s.i]=clockT;
+      crystal.setAttribute("fill",b.c);
+      crystal.animate([{r:9},{r:16},{r:9}],{duration:420});
+      note(330+s.i*70,.14,.035);
+    }
+  }
+  // cull far rings
+  spawned=spawned.filter(s=>{
+    if(clockT-s.start>Math.max(...BELLS.map(x=>x.delay))+6){s.el.remove();return false;}
+    return true;});
+  // end conditions
+  if(arrived.every(a=>a!=null)){
+    finish();return;
+  }
+  if(clockT>=ENDT){finish();return;}
+}
+function finish(){
+  clearInterval(timer);running=false;
+  results=arrived.slice();
+  document.getElementById("runBtn").textContent="🔔 Toll the Bells";
+  paintGrid();
+  const got=arrived.filter(a=>a!=null);
+  if(got.length===BELLS.length && new Set(arrived).size===1){
+    // CHORD!
+    crystal.setAttribute("fill","#fff3c4");
+    for(let k=0;k<30;k++){
+      const s=S("circle",{cx:SHRINE.x,cy:SHRINE.y+10,r:2.4,fill:k%2?"#ffd166":"#fff"},stage);
+      s.animate([{transform:"translate(0,0)",opacity:1},
+        {transform:`translate(${Math.random()*260-130}px,${Math.random()*200-150}px)`,opacity:0}],
+        {duration:1200+Math.random()*900,easing:"ease-out"});
+    }
+    [262,330,392,523].forEach((f,i)=>setTimeout(()=>note(f,.5,.06),i*90));
+    tiloHolder.innerHTML=tiloSVG(SHRINE.x+56,SHRINE.y+52,.9,"cheer");
+    document.getElementById("bSub").textContent=
+      `All five tones landed on beat ${arrived[0]} — the shrine hums awake.`;
+    document.getElementById("banner").classList.add("show");
+    setTimeout(()=>document.getElementById("banner").classList.remove("show"),4500);
+    setStatus("CHORD! Perfect convergence.");
+  }else{
+    tiloHolder.innerHTML=tiloSVG(SHRINE.x+56,SHRINE.y+52,.9,"sad");
+    const list=BELLS.map((b,i)=>`${b.name}:${arrived[i]??"—"}@t`).join("  ");
+    setStatus(`Discord. Arrival beats → ${list}. Move the white flags into one column.`);
+    note(110,.5,.05);
+  }
+}
+function run(){
+  if(running)return;
+  clockT=0;arrived=Array(BELLS.length).fill(null);results=[];spawned.forEach(s=>s.el.remove());spawned=[];
+  running=true;
+  document.getElementById("runBtn").textContent="❚❚ tolling…";
+  timer=setInterval(stepSim,300);
+}
+function reset(){
+  clearInterval(timer);running=false;clockT=0;
+  arrived=Array(BELLS.length).fill(null);results=[];spawned.forEach(s=>s.el.remove());spawned=[];
+  strikes=Array(BELLS.length).fill(0);            // flawed default: everything on beat 0
+  crystal.setAttribute("fill","#454c80");
+  tiloHolder.innerHTML=tiloSVG(SHRINE.x+56,SHRINE.y+52,.9,"happy");
+  document.getElementById("banner").classList.remove("show");
+  setStatus("The old habit strikes everything on beat zero… then waits to see what comes home.");
+  paintGrid();
+}
+document.getElementById("runBtn").onclick=run;
+document.getElementById("resetBtn").onclick=reset;
+reset();
+</script>
+</body>
+</html>

@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Norbert's Night Round — cross-model ox-alpha</title>
+<style>
+  :root{ --bg:#10151f; --panel:#18202c; --line:#2a3850; --ink:#e2e8f2; --dim:#8fa0b8; --accent:#ffc857;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{ background:radial-gradient(1100px 650px at 50% -10%, #1b2436 0%, var(--bg) 60%);
+        color:var(--ink); font-family:"Avenir Next","Trebuchet MS",system-ui,sans-serif;
+        display:flex;flex-direction:column;align-items:center;padding:16px;min-height:100vh;}
+  header{text-align:center;margin-bottom:8px;}
+  header h1{font-size:25px;color:#cfd8ff;letter-spacing:.05em;}
+  header p{color:var(--dim);font-size:13px;margin-top:3px;}
+  .stage-wrap{position:relative;}
+  svg#stage{display:block;background:#141b2a;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.55);}
+  .panel{width:800px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px 16px;margin-top:12px;}
+  .panel h2{font-size:13px;color:var(--accent);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px;}
+  #strip{display:flex;gap:5px;flex-wrap:nowrap;}
+  .slot{width:50px;height:50px;border-radius:9px;background:#0e1520;border:1px dashed #35465f;
+        display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer;color:#cfe0ff;}
+  .slot.full{border-style:solid;background:#20304a;}
+  .slot.cur{outline:2px solid var(--accent);}
+  .slot.locked{cursor:not-allowed;opacity:.75;}
+  .palette{display:flex;gap:7px;margin-top:10px;align-items:center;flex-wrap:wrap;}
+  .pbtn{padding:7px 11px;border-radius:9px;border:1px solid var(--line);background:#223047;color:var(--ink);
+        font-family:inherit;font-size:15px;cursor:pointer;}
+  .pbtn:hover{border-color:var(--accent);}
+  .pbtn.special{background:#3d3054;border-color:#5b4a86;}
+  #controls{display:flex;align-items:center;gap:14px;margin-top:12px;}
+  button.big{font-family:inherit;font-size:15px;padding:9px 22px;border-radius:10px;border:none;cursor:pointer;font-weight:600;}
+  .primary{background:#ffc857;color:#3a2a05;box-shadow:0 4px 0 #b8892c;}
+  .primary:active{transform:translateY(2px);box-shadow:0 2px 0 #b8892c;}
+  .ghostb{background:#22333d;color:var(--ink);border:1px solid var(--line);}
+  #status{font-size:14px;color:var(--dim);flex:1;min-height:20px;}
+  #dawnbar{width:120px;height:10px;border-radius:6px;background:#0d1420;overflow:hidden;border:1px solid var(--line);}
+  #dawnfill{height:100%;width:0%;background:linear-gradient(90deg,#40507a,#ffc857);}
+  .banner{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+          pointer-events:none;opacity:0;transition:opacity .5s;text-align:center;}
+  .banner.show{opacity:1;}
+  .banner .big{font-size:32px;color:#ffe9b8;text-shadow:0 4px 20px rgba(255,160,60,.6);font-weight:700;}
+  .banner .sub{font-size:15px;color:#d6e2f5;margin-top:8px;}
+  .legend{font-size:12px;color:var(--dim);margin-top:8px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>Norbert's Night Round</h1>
+  <p>Pin cards onto Norbert's dream. At dawn's first tick he walks it <em>alone</em> — no calling out mid-dream.</p>
+</header>
+
+<div class="stage-wrap">
+  <svg id="stage" viewBox="0 0 800 470" width="800" height="470"></svg>
+  <div class="banner" id="banner"><div class="big" id="bTitle"></div><div class="sub" id="bSub"></div></div>
+</div>
+
+<div class="panel">
+  <h2>Dream Strip — tap a palette card to pin it · tap a pinned card to remove (jump flips direction)</h2>
+  <div id="strip"></div>
+  <div class="palette">
+    <span style="color:var(--dim);font-size:13px;">pin:</span>
+    <button class="pbtn" data-add="SU">↑ step</button>
+    <button class="pbtn" data-add="SD">↓ step</button>
+    <button class="pbtn" data-add="SL">← step</button>
+    <button class="pbtn" data-add="SR">→ step</button>
+    <button class="pbtn special" data-add="JR">⇥ jump</button>
+    <button class="pbtn special" data-add="RING">🔔 ring</button>
+    <button class="pbtn special" data-add="PULL">⚓ pull</button>
+    <div id="status">His old dream walks him straight off Main Street…</div>
+  </div>
+  <div id="controls">
+    <button class="big primary" id="runBtn">🌙 Begin the Round</button>
+    <button class="big ghostb" id="resetBtn">↺ Reset</button>
+    <div id="dawnbar"><div id="dawnfill"></div></div>
+  </div>
+  <div class="legend">The lever won't turn while the cat sleeps on it. Ringing the bakery bell calls her away — she takes her time.</div>
+</div>
+
+<script>
+"use strict";
+/* ---------- board ---------- */
+const COLS=12, ROWS=7, T=56, OX=64, OY=26;
+const tx=c=>OX+c*T+T/2, ty=r=>OY+r*T+T/2;
+const START=[1,1], LEVER=[10,5], BELL=[9,1];
+const HOLES=new Set(["7,2","7,3"]);
+const NEST=[8,4];
+const WATER=c=>c===11&&true;
+const BLOCKED=new Set(["0,0","1,0","4,2","4,3"]); // houses + fountain
+const MAXC=14;
+
+/* ---------- svg helpers ---------- */
+const NS="http://www.w3.org/2000/svg";
+function S(tag,attrs,parent){const el=document.createElementNS(NS,tag);
+  for(const k in attrs)el.setAttribute(k,attrs[k]);if(parent)parent.appendChild(el);return el;}
+
+function tiloSVG(x,y,scale,mood){
+  const py=mood==="sad"?1:mood==="cheer"?-2:-1;
+  const mouth = mood==="wow" ? `<circle cx="0" cy="-1" r="2.2" fill="#123326"/>`
+    : mood==="cheer" ? `<path d="M -4,-2 Q 0,4 4,-2 Z" fill="#123326"/>`
+    : mood==="sad" ? `<path d="M -3,1 Q 0,-2 3,1" fill="none" stroke="#123326" stroke-width="1.6" stroke-linecap="round"/>`
+    : `<path d="M -3,-1 Q 0,2 3,-1" fill="none" stroke="#123326" stroke-width="1.6" stroke-linecap="round"/>`;
+  return `<g transform="translate(${x},${y}) scale(${scale})">
+    <ellipse cx="-7" cy="0" rx="6" ry="3.4" fill="#3f9a70"/><ellipse cx="7" cy="0" rx="6" ry="3.4" fill="#3f9a70"/>
+    <ellipse cx="-17" cy="-10" rx="4.4" ry="6.4" fill="#69d19c" stroke="#1e5b41" stroke-width="1.6" transform="rotate(18 -17 -10)"/>
+    <ellipse cx="17" cy="-10" rx="4.4" ry="6.4" fill="#69d19c" stroke="#1e5b41" stroke-width="1.6" transform="rotate(-18 17 -10)"/>
+    <ellipse cx="0" cy="-12" rx="16" ry="15" fill="#69d19c" stroke="#1e5b41" stroke-width="2"/>
+    <ellipse cx="0" cy="-7" rx="9.5" ry="7.5" fill="#8fe7bc"/>
+    <path d="M 0,-26 C 2,-34 8,-37 12,-38" fill="none" stroke="#1e5b41" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="13" cy="-39" r="4" fill="#ffc857" stroke="#1e5b41" stroke-width="1.5"/>
+    <ellipse cx="-6" cy="-15" rx="5" ry="6.2" fill="#fff"/><ellipse cx="6" cy="-15" rx="5" ry="6.2" fill="#fff"/>
+    <circle cx="-5" cy="${-15+py}" r="2.6" fill="#132b20"/><circle cx="7" cy="${-15+py}" r="2.6" fill="#132b20"/>
+    <circle cx="-5.8" cy="${-16+py}" r=".9" fill="#fff"/><circle cx="6.2" cy="${-16+py}" r=".9" fill="#fff"/>
+    ${mouth}</g>`;
+}
+function norbertSVG(x,y,scale,expr){
+  const eyes = expr==="ow"
+    ? `<circle cx="-9" cy="-16" r="5.5" fill="#fff"/><circle cx="9" cy="-16" r="5.5" fill="#fff"/>
+       <circle cx="-9" cy="-15" r="2.6" fill="#221a33"/><circle cx="9" cy="-15" r="2.6" fill="#221a33"/>`
+    : `<path d="M -13,-16 q 4,-4 8,0 M 5,-16 q 4,-4 8,0" stroke="#221a33" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+  const mouth = expr==="ow" ? `<ellipse cx="0" cy="-4" rx="5" ry="6" fill="#3a2a45"/>` : `<path d="M -5,-5 q 5,3 10,0" stroke="#221a33" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+  return `<g transform="translate(${x},${y}) scale(${scale})">
+    <ellipse cx="0" cy="-2" rx="21" ry="5" fill="#0c1220" opacity=".5"/>
+    <ellipse cx="-10" cy="0" rx="8" ry="4.5" fill="#7d6bb0"/><ellipse cx="10" cy="0" rx="8" ry="4.5" fill="#7d6bb0"/>
+    <ellipse cx="-19" cy="-16" rx="5.5" ry="8" fill="#b9a7e8" stroke="#4a3a73" stroke-width="1.6" transform="rotate(15 -19 -16)"/>
+    <ellipse cx="19" cy="-16" rx="5.5" ry="8" fill="#b9a7e8" stroke="#4a3a73" stroke-width="1.6" transform="rotate(-15 19 -16)"/>
+    <ellipse cx="0" cy="-20" rx="20" ry="19" fill="#b9a7e8" stroke="#4a3a73" stroke-width="2"/>
+    <ellipse cx="0" cy="-13" rx="11" ry="8.5" fill="#d7ccf5"/>
+    <path d="M -8,-36 L 2,-49 L 10,-37 Z" fill="#8fd0e8" stroke="#4a3a73" stroke-width="1.5"/>
+    <circle cx="3" cy="-49" r="3.5" fill="#ffe9b8" stroke="#4a3a73" stroke-width="1.2"/>
+    ${eyes}${mouth}</g>`;
+}
+
+/* ---------- scene ---------- */
+const stage=document.getElementById("stage");
+let defs=S("defs",{},stage);
+defs.innerHTML=`<linearGradient id="night" x1="0" y1="0" x2="0" y2="1">
+   <stop offset="0" stop-color="#1a2338"/><stop offset="1" stop-color="#101725"/></linearGradient>
+ </defs><filter id="glow2"><feGaussianBlur stdDeviation="2.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
+S("rect",{x:0,y:0,width:800,height:470,fill:"url(#night)"},stage);
+// stars & moon
+for(let i=0;i<40;i++)S("circle",{cx:Math.random()*800,cy:Math.random()*200,r:Math.random()*1.4+.4,fill:"#cfe0ff",opacity:Math.random()*.7+.2},stage);
+S("circle",{cx:730,cy:56,r:26,fill:"#ffeebc",opacity:.95},stage);
+S("circle",{cx:720,cy:50,r:22,fill:"#1a2338"},stage);
+// ground
+for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+  const k=c+","+r;
+  const road=(r===1)||(c===10&&r>=1)||(r===5&&c>=8);
+  S("rect",{x:OX+c*T,y:OY+r*T,width:T,height:T,
+    fill:WATER(c)?"#123044":road?"#2c4250":"#1b3240",
+    stroke:"#0d1622","stroke-width":1},stage);
+  if(WATER(c))S("rect",{x:OX+c*T+10,y:OY+r*T+8,width:8,height:T-16,rx:4,fill:"#1d4258",opacity:.8},stage);
+}
+// holes
+HOLES.forEach(k=>{const[c,r]=k.split(",").map(Number);
+  S("ellipse",{cx:tx(c),cy:ty(r)+4,rx:24,ry:17,fill:"#080d16"},stage);
+  S("path",{d:`M ${tx(c)-20} ${ty(r)-6} q 8,-7 16,0 M ${tx(c)-2} ${ty(r)-10} q 8,-7 16,0`,stroke:"#3a2a1c","stroke-width":3,fill:"none"},stage);});
+// goose nest
+{const[c,r]=NEST;
+ S("ellipse",{cx:tx(c),cy:ty(r)+8,rx:20,ry:10,fill:"#7a5c33"},stage);
+ for(let i=0;i<3;i++){const a=-.5+i*.5;
+   S("ellipse",{cx:tx(c)+Math.cos(a)*10,cy:ty(r)+2+Math.sin(a)*4,rx:5,ry:3.4,fill:"#efe7d8",stroke:"#b8ab90","stroke-width":1},stage);}
+ S("text",{x:tx(c),y:ty(r)-18,"text-anchor":"middle","font-size":11,fill:"#c9b98f"},stage).textContent="geese dozing";}
+// fountain
+[[4,2],[4,3]].forEach(([c,r])=>{
+  S("circle",{cx:tx(c),cy:ty(r),r:22,fill:"#274a5c",stroke:"#5b7d90","stroke-width":2},stage);
+  S("circle",{cx:tx(c),cy:ty(r),r:5,fill:"#9fd8ea"},stage);});
+// houses
+function house(c,r,w,h,label,winLit){
+  S("rect",{x:OX+c*T+4,y:OY+r*T-6,width:w*T-8,height:h*T-4,rx:6,fill:"#2a3550",stroke:"#41507a","stroke-width":2},stage);
+  S("path",{d:`M ${OX+c*T} ${OY+r*T-4} L ${OX+c*T+w*T/2} ${OY+r*T-30} L ${OX+c*T+w*T} ${OY+r*T-4} Z`,fill:"#3a4768",stroke:"#41507a","stroke-width":2},stage);
+  if(winLit)S("rect",{x:OX+c*T+w*T/2-7,y:OY+r*T+10,width:14,height:14,rx:2,fill:"#ffd166",filter:"url(#glow2)"},stage);
+  if(label)S("text",{x:OX+c*T+w*T/2,y:OY+r*T+h*T-12,"text-anchor":"middle","font-size":10,fill:"#93a5c8"},stage).textContent=label;
+}
+house(0,0,2,1,"norbert's",false);
+house(8,0,2,1,"bakery 🔔",true);
+// bell post marker
+S("circle",{cx:tx(BELL[0]),cy:ty(BELL[1])-16,r:7,fill:"#ffd166",stroke:"#8a6a20","stroke-width":2,class:"bell"},stage);
+// lever pedestal
+S("rect",{x:tx(LEVER[0])-14,y:ty(LEVER[1])+6,width:28,height:14,rx:3,fill:"#4a5568"},stage);
+const leverArm=S("line",{x1:tx(LEVER[0]),y1:ty(LEVER[1])+8,x2:tx(LEVER[0]),y2:ty(LEVER[1])-16,stroke:"#ffd166","stroke-width":5,"stroke-linecap":"round"},stage);
+// canal + gate + boat
+S("text",{x:tx(11),y:ty(1)-14,"text-anchor":"middle","font-size":11,fill:"#7fa8bf"},stage).textContent="canal";
+const gate=S("g",{},stage);
+S("rect",{x:tx(11)-20,y:ty(4)-24,width:40,height:104,rx:4,fill:"#6b4a2f",stroke:"#8f6a44","stroke-width":2},gate);
+for(let i=0;i<4;i++)S("line",{x1:tx(11)-20,y1:ty(4)-24+i*26,x2:tx(11)+20,y2:ty(4)-24+i*26,stroke:"#8f6a44","stroke-width":2},gate);
+const boat=S("g",{opacity:.95},stage);
+boat.innerHTML=`<path d="M ${tx(11)-16} ${ty(6)+34} q 16,12 32,0 l -4,-9 h -24 Z" fill="#7a5c33"/>
+  <line x1="${tx(11)}" y1="${ty(6)+25}" x2="${tx(11)}" y2="${ty(6)+2}" stroke="#caa06a" stroke-width="2"/>
+  <path d="M ${tx(11)} ${ty(6)+4} q 12,8 0,20 Z" fill="#e8dcbf"/>`;
+
+/* layers */
+const entLayer=S("g",{},stage);
+const fxLayer=S("g",{},stage);
+
+/* ---------- state ---------- */
+let dream=[], running=false, timer=null, cardIdx=0, tickCount=0;
+let norbert={pos:[...START], px:tx(START[0]), py:ty(START[1])};
+let cat={state:"lever", x:LEVER[0], y:LEVER[1], path:[], steps:0};
+let gateOpen=false;
+
+const stripEl=document.getElementById("strip");
+function renderStrip(cur=-1){
+  stripEl.innerHTML="";
+  for(let i=0;i<MAXC;i++){
+    const d=document.createElement("div");
+    const c=dream[i];
+    d.className="slot"+(c?" full":"")+(i===cur?" cur":"")+(running?" locked":"");
+    if(c){
+      if(c.t==="JR"){
+        d.innerHTML=`<span class="jdir" style="cursor:pointer">${cardGlyph(c)}</span>`;
+        d.title="tap arrow to flip · tap elsewhere to remove";
+        const sp=d.querySelector(".jdir");
+        if(!running)sp.onclick=ev=>{ev.stopPropagation();cycleJump(i);};
+      }else{
+        d.textContent=cardGlyph(c);
+        d.title="tap to remove";
+      }
+      if(!running)d.onclick=()=>{dream.splice(i,1);renderStrip();};
+    }
+    d.className+=" ";
+    stripEl.appendChild(d);
+  }
+}
+function cardGlyph(c){
+  return {SU:"↑",SD:"↓",SL:"←",SR:"→",JR:{R:"⇥",L:"⇤",U:"⇧",D:"⇩"}[c.d],RING:"🔔",PULL:"⚓"}[c.t==="JR"?c.t:c.t]||"?";
+}
+function cycleJump(i){ const dirs=["R","D","L","U"]; const cur=dirs.indexOf(dream[i].d);
+  dream[i].d=dirs[(cur+1)%4]; renderStrip(); }
+
+document.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{
+  if(running||dream.length>=MAXC)return;
+  const a=b.dataset.add;
+  if(a==="RING")dream.push({t:"RING"});
+  else if(a==="PULL")dream.push({t:"PULL"});
+  else if(a==="JR")dream.push({t:"JR",d:"R"});
+  else dream.push({t:a});
+  renderStrip();
+});
+
+/* ---------- rendering entities ---------- */
+function renderEntities(){
+  entLayer.innerHTML="";
+  // cat
+  let cxp=tx(cat.x), cyp=ty(cat.y);
+  if(cat.state==="moving"&&cat.path.length){ /* drawn at interpolated pos below */ }
+  entLayer.innerHTML+=`
+   <g transform="translate(${cxp},${cyp+6})">
+     <ellipse cx="0" cy="0" rx="12" ry="8" fill="#e8934a" stroke="#a05a20" stroke-width="1.5"/>
+     <circle cx="8" cy="-8" r="7" fill="#e8934a" stroke="#a05a20" stroke-width="1.5"/>
+     <path d="M 4,-13 l -2,-5 4,2 Z M 11,-14 l 3,-5 1,5 Z" fill="#e8934a" stroke="#a05a20" stroke-width="1"/>
+     <path d="M -12,-2 q -7,2 -6,9" stroke="#a05a20" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+     <path d="M 5,-8 q 1.6,-1.4 3.2,0 M 9.5,-8 q 1.6,-1.4 3.2,0" stroke="#3a2408" stroke-width="1.3" fill="none"/>
+   </g>`;
+  // norbert + tilo
+  entLayer.innerHTML+=norbertSVG(norbert.px,norbert.py+6,1,running?"":"sleep");
+  entLayer.innerHTML+=tiloSVG(norbert.px+2,norbert.py-46,.62,running?"happy":"happy");
+  // zzz when idle
+  if(!running&&!failed&&!won){
+    entLayer.innerHTML+=`<text x="${norbert.px+22}" y="${norbert.py-42}" font-size="13" fill="#9fb4d8" font-style="italic">z z</text>`;
+  }
+}
+
+/* ---------- simulation ---------- */
+const statusEl=document.getElementById("status");
+let failed=false, won=false;
+
+function setStatus(s){statusEl.textContent=s;}
+
+function neighborsDir(d){return {U:[0,-1],D:[0,1],L:[-1,0],R:[1,0]}[d];}
+function tileFree(c,r){ 
+  if(c<0||r<0||c>=COLS||r>=ROWS)return false;
+  const k=c+","+r;
+  if(HOLES.has(k)||BLOCKED.has(k))return false;
+  if(WATER(c))return false;
+  return true;
+}
+function execCard(card,done){
+  const [c,r]=norbert.pos;
+  if(card.t==="SU"||card.t==="SD"||card.t==="SL"||card.t==="SR"){
+    const d=neighborsDir(card.t[1]); const nc=c+d[0],nr=r+d[1];
+    const k=nc+","+nr;
+    if(!tileFree(nc,nr)&&!(nc===LEVER[0]&&nr===LEVER[1])){
+      if(HOLES.has(k)){failHole();return;}
+      if(WATER(nc)&&nc<COLS){failSplash();return;}
+      bump(done);return;
+    }
+    moveTo(nc,nr,done);return;
+  }
+  if(card.t==="JR"){
+    const d=neighborsDir(card.d); const nc=c+2*d[0],nr=r+2*d[1];
+    const k=nc+","+nr;
+    if(tileFree(nc,nr)){
+      if(nc===NEST[0]&&nr===NEST[1]){norbert.pos=[nc,nr];norbert.px=tx(nc);norbert.py=ty(nr);failGeese();return;}
+      // hop arc
+      norbert.px=tx(nc);norbert.py=ty(nr);norbert.pos=[nc,nr];
+      renderEntities();
+      statusEl.textContent="Hop!";
+      setTimeout(done,620);return;
+    }
+    if(HOLES.has(k)){failHole();return;}
+    if(nc>=COLS&&WATER(Math.min(nc,COLS-1))===false){}
+    if(nc<0||nr<0||nc>=COLS||nr>=ROWS||BLOCKED.has(k)||WATER(nc)){bump(done);return;}
+    bump(done);return;
+  }
+  if(card.t==="RING"){
+    S("circle",{cx:tx(BELL[0]),cy:ty(BELL[1])-16,r:8,fill:"none",stroke:"#ffd166","stroke-width":3},fxLayer)
+      .animate([{r:8,opacity:1},{r:34,opacity:0}],{duration:700});
+    if(cat.state==="lever"){
+      cat.state="moving"; cat.path=routeCat([cat.x,cat.y],BELL); cat.steps=0;
+      setStatus("The bell rings out — the cat stretches, hops down, and ambles toward the bakery…");
+    } else {
+      setStatus("The bell rings. The cat flicks an ear, unbothered.");
+    }
+    setTimeout(done,500);return;
+  }
+  if(card.t==="PULL"){
+    const adj=Math.abs(norbert.pos[0]-LEVER[0])<=1&&Math.abs(norbert.pos[1]-LEVER[1])<=1;
+    if(!adj){ setStatus("He pulls at empty air — the lever is elsewhere."); shrug(done);return; }
+    if(cat.state==="lever"){
+      // cat puffs up, resettles
+      setStatus("He tugs… but a very indignant cat is sleeping on the mechanism.");
+      S("text",{x:tx(LEVER[0])+18,y:ty(LEVER[1])-24,"font-size":14,fill:"#ffb0a0"},fxLayer).textContent="mrrp!";
+      setTimeout(()=>{fxLayer.innerHTML="";},900);
+      shrug(done);return;
+    }
+    winPull();return;
+  }
+}
+function routeCat(from,to){
+  const path=[]; let [x,y]=from;
+  while(x!==to[0]){ x+=Math.sign(to[0]-x); path.push([x,y]); }
+  while(y!==to[1]){ y+=Math.sign(to[1]-y); path.push([x,y]); }
+  return path;
+}
+function moveTo(nc,nr,done){
+  norbert.pos=[nc,nr];
+  if(nc===NEST[0]&&nr===NEST[1]){failGeese();return;}
+  norbert.px=tx(nc); norbert.py=ty(nr);
+  renderEntities();
+  setTimeout(done,600);
+}
+function bump(done){
+  statusEl.textContent="Thump. He sleepwalks straight into it and rubs his nose.";
+  const g=norbertSVG(norbert.px,norbert.py+6,1,"ow");
+  entLayer.innerHTML=g;
+  setTimeout(()=>{renderEntities();done();},550);
+}
+function shrug(done){
+  renderEntities();
+  setTimeout(done,650);
+}
+function failHole(){
+  failed=true; stopRun();
+  for(let i=0;i<6;i++)S("circle",{cx:norbert.px,cy:norbert.py,r:2.5,fill:"#b09a72"},fxLayer);
+  entLayer.innerHTML=norbertSVG(norbert.px,norbert.py+16,1,"ow");
+  entLayer.innerHTML+=tiloSVG(norbert.px-4,norbert.py-30,.6,"wow");
+  showBanner("Whoops — down the landslide!","The lane gave way last spring. His dream remembers the old street.");
+  setStatus("Failed: tumbled into the pit at card "+(cardIdx)+". Edit the dream.");
+  document.getElementById("runBtn").textContent="🌙 Begin the Round";
+}
+function failGeese(){
+  failed=true; stopRun();
+  for(let i=0;i<5;i++){const a=i*1.256;
+    S("ellipse",{cx:norbert.px+Math.cos(a)*34,cy:norbert.py+Math.sin(a)*22,rx:9,ry:6,fill:"#f2ede2",stroke:"#b8ab90"},fxLayer);}
+  showBanner("HONK. HONK. HONK.","The whole gaggle is awake. The street will remember this.");
+  setStatus("Failed: stepped on the goose nest at card "+(cardIdx)+".");
+  document.getElementById("runBtn").textContent="🌙 Begin the Round";
+}
+function failSplash(){
+  failed=true; stopRun();
+  for(let i=0;i<8;i++)S("circle",{cx:norbert.px+(Math.random()*40-20),cy:norbert.py+(Math.random()*20-10),r:2.5,fill:"#9fd8ea"},fxLayer);
+  showBanner("Splish.","Canal water is very wake-up-y.");
+  setStatus("Failed: walked into the canal at card "+(cardIdx)+".");
+  document.getElementById("runBtn").textContent="🌙 Begin the Round";
+}
+function winPull(){
+  won=true; stopRun();
+  leverArm.setAttribute("transform",`rotate(40 ${tx(LEVER[0])} ${ty(LEVER[1])})`);
+  gate.animate([{transform:"translateY(0)"},{transform:"translateY(150px)"}],{duration:1400,fill:"forwards",easing:"ease-in-out"});
+  boat.animate([{transform:"translateX(0)"},{transform:"translateX(-260px)"}],{duration:2600,delay:900,fill:"forwards"});
+  showBanner("The gate sighs open.","Somewhere downstream, a ferryman tips his hat. Norbert snores on, victorious.");
+  setStatus("Won! Lever pulled with "+(60-tickCount)+" ticks of night to spare.");
+  document.getElementById("runBtn").textContent="🌙 Begin the Round";
+}
+function showBanner(t,s){
+  document.getElementById("bTitle").textContent=t;
+  document.getElementById("bSub").textContent=s;
+  document.getElementById("banner").classList.add("show");
+  setTimeout(hideBanner,4200);
+}
+function hideBanner(){document.getElementById("banner").classList.remove("show");}
+
+/* main loop */
+let busy=false;
+function loop(){
+  tickCount++;
+  document.getElementById("dawnfill").style.width=(tickCount/60*100)+"%";
+  // cat movement
+  if(cat.state==="moving"){
+    cat.steps++;
+    if(cat.steps%2===0&&cat.path.length){ [cat.x,cat.y]=cat.path.shift(); renderEntities(); }
+    if(!cat.path.length){ cat.state="bakery"; setStatus("The cat curls up in the bakery window."); }
+  }
+  if(tickCount>=60){ 
+    failed=true;stopRun();
+    showBanner("Dawn.","The sky pales. Norbert yawns enormous — the lever waits for another night.");
+    setStatus("Failed: the night ran out. Tighten the dream.");
+    document.getElementById("runBtn").textContent="🌙 Begin the Round";
+    return;
+  }
+  if(busy)return;
+  if(cardIdx>=dream.length)return; // stands still rest of night
+  const card=dream[cardIdx]; cardIdx++;
+  busy=true;
+  renderStrip(cardIdx-1);
+  execCard(card,()=>{busy=false;renderStrip(cardIdx);});
+}
+function stopRun(){clearInterval(timer);running=false;busy=false;}
+
+function run(){
+  if(running)return;
+  if(dream.length===0){setStatus("His dream is blank — he would simply stand and snore.");return;}
+  running=true;failed=false;won=false;cardIdx=0;tickCount=0;busy=false;
+  norbert={pos:[...START],px:tx(START[0]),py:ty(START[1])};
+  cat={state:"lever",x:LEVER[0],y:LEVER[1],path:[],steps:0};
+  leverArm.removeAttribute("transform");
+  gate.getAnimations().forEach(a=>a.cancel());
+  boat.getAnimations().forEach(a=>a.cancel());
+  fxLayer.innerHTML="";
+  document.getElementById("banner").classList.remove("show");
+  renderStrip(); renderEntities();
+  document.getElementById("runBtn").textContent="❚❚ dreaming…";
+  timer=setInterval(loop,320);
+}
+function reset(){
+  stopRun();
+  dream=[{t:"SR"},{t:"SR"},{t:"SR"},{t:"SR"},{t:"SR"},{t:"SR"},{t:"SD"},{t:"SD"},{t:"SD"},{t:"SD"},{t:"PULL"}];
+  norbert={pos:[...START],px:tx(START[0]),py:ty(START[1])};
+  cat={state:"lever",x:LEVER[0],y:LEVER[1],path:[],steps:0};
+  leverArm.removeAttribute("transform");
+  gate.getAnimations().forEach(a=>a.cancel());
+  boat.getAnimations().forEach(a=>a.cancel());
+  fxLayer.innerHTML="";failed=false;won=false;tickCount=0;
+  document.getElementById("dawnfill").style.width="0%";
+  document.getElementById("banner").classList.remove("show");
+  document.getElementById("runBtn").textContent="🌙 Begin the Round";
+  setStatus("His old dream walks him straight off Main Street…");
+  renderStrip();renderEntities();
+}
+
+document.getElementById("runBtn").onclick=run;
+document.getElementById("resetBtn").onclick=reset;
+reset();
+</script>
+</body>
+</html>

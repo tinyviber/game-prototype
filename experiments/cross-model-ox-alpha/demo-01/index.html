@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Leaning Grove — cross-model ox-alpha</title>
+<style>
+  :root{ --bg:#101a20; --panel:#18242c; --line:#26404a; --ink:#dcebe4; --dim:#8fae9f; --accent:#ffc857; }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{ background:radial-gradient(1200px 700px at 50% -10%, #1a2a33 0%, var(--bg) 60%);
+        color:var(--ink); font-family:"Avenir Next","Trebuchet MS",system-ui,sans-serif;
+        min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:18px; }
+  header{ text-align:center; margin-bottom:10px;}
+  header h1{ font-size:26px; letter-spacing:.06em; color:#ffe9b8;}
+  header p{ color:var(--dim); font-size:13px; margin-top:4px;}
+  .stage-wrap{ position:relative; }
+  svg#stage{ display:block; background:#15222b; border-radius:16px; box-shadow:0 10px 40px rgba(0,0,0,.5); }
+  .panel{ width:800px; background:var(--panel); border:1px solid var(--line); border-radius:14px;
+          padding:14px 16px; margin-top:12px;}
+  .panel h2{ font-size:13px; color:var(--accent); letter-spacing:.08em; text-transform:uppercase; margin-bottom:8px;}
+  #sched{ display:grid; grid-template-columns: 92px repeat(18, 1fr); gap:3px; align-items:center;}
+  .orblabel{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink);}
+  .dot{ width:12px;height:12px;border-radius:50%; display:inline-block; border:1px solid rgba(0,0,0,.35);}
+  .cell{ height:22px; border-radius:5px; background:#0d151b; cursor:pointer; position:relative;}
+  .cell:hover{ outline:1px solid var(--accent);}
+  .cell.on{ box-shadow: inset 0 0 0 2px rgba(255,255,255,.25);}
+  .cell.cur{ outline:2px solid #fff; }
+  #controls{ display:flex; align-items:center; gap:14px; margin-top:12px;}
+  button{ font-family:inherit; font-size:15px; padding:9px 22px; border-radius:10px; border:none;
+          cursor:pointer; font-weight:600; letter-spacing:.03em;}
+  button.primary{ background:#ffc857; color:#3a2a05; box-shadow:0 4px 0 #b8892c;}
+  button.primary:active{ transform:translateY(2px); box-shadow:0 2px 0 #b8892c;}
+  button.ghostb{ background:#22333d; color:var(--ink); border:1px solid var(--line);}
+  #status{ font-size:14px; color:var(--dim); flex:1; min-height:20px;}
+  .banner{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+           pointer-events:none; opacity:0; transition:opacity .5s;}
+  .banner.show{ opacity:1;}
+  .banner .big{ font-size:34px; color:#ffe9b8; text-shadow:0 4px 20px #ff9d00; font-weight:700;}
+  .banner .sub{ font-size:15px; color:#cfe8d9; margin-top:8px;}
+  .legend{ font-size:12px;color:var(--dim); margin-top:8px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>The Leaning Grove</h1>
+  <p>The shoot grows one breath at a time toward whichever sun-orb sings brightest. Re-tune the song of light — guide it to the Mother Bloom.</p>
+</header>
+
+<div class="stage-wrap">
+  <svg id="stage" viewBox="0 0 800 480" width="800" height="480"></svg>
+  <div class="banner" id="banner"><div class="big">The Bloom wakes!</div><div class="sub" id="bannersub"></div></div>
+</div>
+
+<div class="panel">
+  <h2>Song of Light — tap a row per breath (brightest orb wins)</h2>
+  <div id="sched"></div>
+  <div id="controls">
+    <button class="primary" id="runBtn">▶ Grow</button>
+    <button class="ghostb" id="resetBtn">↺ Reset</button>
+    <div id="status">The old song pulls the shoot into the stone canopy. Try another tune.</div>
+  </div>
+  <div class="legend">Grey ghost-vine = yesterday's attempt. The shoot cannot pass stone; if it tangles, it wilts.</div>
+</div>
+
+<script>
+"use strict";
+/* ---------- constants ---------- */
+const COLS=24, ROWS=14, CELL=32, OX=16, OY=16;
+const cx=c=>OX+c*CELL+CELL/2, cy=r=>OY+r*CELL+CELL/2;
+const ORBS=[
+  {name:"Moss Orb",  c:"#ffb84d", cell:[7,3]},
+  {name:"Fern Orb",  c:"#6ee7a8", cell:[10,12]},
+  {name:"Dusk Orb",  c:"#7cc7ff", cell:[15,12]},
+  {name:"Star Orb",  c:"#d59bff", cell:[19,2]},
+];
+const BLOOM={cell:[21,7], name:"Mother Bloom", c:"#ff7ab8"};
+const CHOICES=[...ORBS.map((o,i)=>i), "B"];           // orb indexes + Bloom
+const PHASES=18, STEPS_PER_PHASE=2;
+const ROCK_RECTS=[ // [col,row,w,h]
+  [0,0,COLS,1],[0,ROWS-1,COLS,1],[0,0,2,ROWS],[23,0,1,ROWS],
+  [5,5,5,2],      // old canopy
+  [17,4,1,7],     // leaning pillar
+  [19,8,5,1],[22,9,2,5], // bloom ledge + cliff
+];
+const ROCK=new Set();
+ROCK_RECTS.forEach(([c,r,w,h])=>{for(let i=c;i<c+w;i++)for(let j=r;j<r+h;j++)ROCK.add(i+","+j);});
+const key=(c,r)=>c+","+r;
+
+/* ---------- svg helpers ---------- */
+const NS="http://www.w3.org/2000/svg";
+function S(tag,attrs,parent){const el=document.createElementNS(NS,tag);
+  for(const k in attrs)el.setAttribute(k,attrs[k]); if(parent)parent.appendChild(el); return el;}
+
+function tiloSVG(x,y,scale,mood){
+  const m={
+    happy:{py:-1,mouth:"M -3,-1 Q 0,2 3,-1"},
+    cheer:{py:-2,mouth:"M -4,-2 Q 0,4 4,-2 Z"},
+    sad:{py:1,mouth:"M -3,1 Q 0,-2 3,1"},
+    wow:{py:-1,mouth:""},
+  }[mood||"happy"];
+  let mouth;
+  if(mood==="wow") mouth=`<circle cx="0" cy="-1" r="2.2" fill="#123326"/>`;
+  else mouth=`<path d="${m.mouth}" fill="${mood==='cheer'?'#123326':'none'}" stroke="#123326" stroke-width="1.6" stroke-linecap="round"/>`;
+  return `<g transform="translate(${x},${y}) scale(${scale})" class="tiloG">
+    <ellipse cx="-7" cy="0" rx="6" ry="3.4" fill="#3f9a70"/><ellipse cx="7" cy="0" rx="6" ry="3.4" fill="#3f9a70"/>
+    <ellipse cx="-17" cy="-10" rx="4.4" ry="6.4" fill="#69d19c" stroke="#1e5b41" stroke-width="1.6" transform="rotate(18 -17 -10)"/>
+    <ellipse cx="17" cy="-10" rx="4.4" ry="6.4" fill="#69d19c" stroke="#1e5b41" stroke-width="1.6" transform="rotate(-18 17 -10)"/>
+    <ellipse cx="0" cy="-12" rx="16" ry="15" fill="#69d19c" stroke="#1e5b41" stroke-width="2"/>
+    <ellipse cx="0" cy="-7" rx="9.5" ry="7.5" fill="#8fe7bc"/>
+    <path d="M 0,-26 C 2,-34 8,-37 12,-38" fill="none" stroke="#1e5b41" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="13" cy="-39" r="4" fill="#ffc857" stroke="#1e5b41" stroke-width="1.5" class="bobble"/>
+    <ellipse cx="-6" cy="-15" rx="5" ry="6.2" fill="#fff"/><ellipse cx="6" cy="-15" rx="5" ry="6.2" fill="#fff"/>
+    <circle cx="-5" cy="${-15+(m?m.py:0)}" r="2.6" fill="#132b20"/><circle cx="7" cy="${-15+(m?m.py:0)}" r="2.6" fill="#132b20"/>
+    <circle cx="-5.8" cy="${-16+(m?m.py:0)}" r=".9" fill="#fff"/><circle cx="6.2" cy="${-16+(m?m.py:0)}" r=".9" fill="#fff"/>
+    ${mouth}
+  </g>`;
+}
+
+/* ---------- scene build ---------- */
+const stage=document.getElementById("stage");
+let defs=S("defs",{},stage);
+defs.innerHTML=`
+  <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#22394a"/><stop offset="1" stop-color="#101d26"/>
+  </linearGradient>
+  <filter id="glow"><feGaussianBlur stdDeviation="3.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
+S("rect",{x:0,y:0,width:800,height:480,fill:"url(#sky)"},stage);
+// far hills
+S("path",{d:"M0,340 Q140,250 300,330 T620,320 T800,350 L800,480 L0,480 Z",fill:"#16262e"},stage);
+
+const rockGroup=S("g",{},stage);
+ROCK_RECTS.forEach(([c,r,w,h])=>{
+  S("rect",{x:OX+c*CELL,y:OY+r*CELL,width:w*CELL,height:h*CELL,rx:6,fill:"#3a4a52",stroke:"#55676f","stroke-width":1.5},rockGroup);
+});
+// texture speckles
+for(let i=0;i<90;i++){const c=Math.random()*COLS,r=Math.random()*ROWS;
+  if(ROCK.has(key(Math.floor(c),Math.floor(r))))
+   S("circle",{cx:cx(c)+ (Math.random()*14-7), cy:cy(r)+(Math.random()*14-7), r:1.3, fill:"#5d707a",opacity:.7},rockGroup);}
+
+// orbs
+const orbEls=[];
+ORBS.forEach((o,i)=>{
+  const g=S("g",{},stage);
+  S("line",{x1:cx(o.cell[0]),y1:cy(o.cell[1])-40,x2:cx(o.cell[0]),y2:cy(o.cell[1])-14,stroke:"#4a5d66","stroke-width":2},g);
+  const halo=S("circle",{cx:cx(o.cell[0]),cy:cy(o.cell[1]-0),r:16,fill:o.c,opacity:.16},g);
+  const core=S("circle",{cx:cx(o.cell[0]),cy:cy(o.cell[1]-0),r:8,fill:o.c,filter:"url(#glow)"},g);
+  orbEls.push({g,halo,core});
+});
+// bloom
+function drawBloom(open){
+  const [c,r]=BLOOM.cell, X=cx(c), Y=cy(r);
+  return `
+   <g id="bloomG" transform="translate(${X},${Y})">
+     <path d="M -2,${CELL/2} L 0,4 L 2,${CELL/2}" stroke="#2f6b4f" stroke-width="3" fill="none"/>
+     <g id="petals" style="transform-origin:0px 0px; ${open?'':'transform:scale(.35);opacity:.75'}">
+       ${[0,72,144,216,288].map(a=>`<ellipse cx="0" cy="-9" rx="5.5" ry="10" fill="#ff7ab8" transform="rotate(${a})" stroke="#c2447f" stroke-width="1"/>`).join("")}
+       <circle r="5.5" fill="#ffd166"/>
+     </g>
+   </g>`;
+}
+const bloomHolder=S("g",{},stage); bloomHolder.innerHTML=drawBloom(false);
+// sprout base
+S("path",{d:`M ${cx(2)},${cy(10)+14} q 6,-10 2,-20`,stroke:"#2f6b4f","stroke-width":3,fill:"none"},stage);
+
+const ghostLayer=S("g",{},stage);
+const vineLayer=S("g",{},stage);
+const fxLayer=S("g",{},stage);
+const tiloHolder=S("g",{},stage);
+tiloHolder.innerHTML=tiloSVG(cx(2)+2,cy(10)+16,.95,"happy");
+
+/* ---------- schedule UI ---------- */
+const schedEl=document.getElementById("sched");
+const cellEls=[]; // [choiceIdx][phase]
+let schedule=new Array(PHASES).fill(0); // default all Moss Orb -> flawed
+const rowDefs=[...ORBS.map((o,i)=>({label:o.name,dot:o.c,idx:i})),{label:BLOOM.name,dot:BLOOM.c,idx:"B"}];
+rowDefs.forEach(rd=>{
+  const lab=document.createElement("div"); lab.className="orblabel";
+  lab.innerHTML=`<span class="dot" style="background:${rd.dot}"></span>${rd.label}`;
+  schedEl.appendChild(lab);
+  cellEls[rd.idx]=[];
+  for(let p=0;p<PHASES;p++){
+    const d=document.createElement("div"); d.className="cell"; d.dataset.p=p;
+    d.onclick=()=>{ if(running)return; schedule[p]=rd.idx; paint(); };
+    schedEl.appendChild(d); cellEls[rd.idx][p]=d;
+  }
+});
+function paint(curPhase=-1){
+  CHOICES.forEach(idx=>{ for(let p=0;p<PHASES;p++){
+    const el=cellEls[idx][p]; el.className="cell"+(schedule[p]===idx?" on":"")+(p===curPhase?" cur":"");
+    el.style.background = schedule[p]===idx ? rowDefs.find(r=>r.idx===idx).dot : "";
+    el.style.opacity = schedule[p]===idx? .85 : "";
+  }});
+}
+paint();
+
+/* ---------- simulation ---------- */
+let vine=[], visited=new Set(), running=false, timer=null, phase=0;
+let ghost=null, statusEl=document.getElementById("status");
+
+function drawVine(cells,brownTip){
+  vineLayer.innerHTML="";
+  if(cells.length<1)return;
+  const pts=cells.map(([c,r])=>`${cx(c)},${cy(r)}`).join(" ");
+  S("polyline",{points:pts,fill:"none",stroke:brownTip?"#8a6a45":"#58c98f",
+    "stroke-width":7,"stroke-linecap":"round","stroke-linejoin":"round"},vineLayer);
+  S("polyline",{points:pts,fill:"none",stroke:"#a5f0c8","stroke-width":2.4,
+    "stroke-linecap":"round",opacity:.8},vineLayer);
+  cells.forEach(([c,r],i)=>{ if(i%3===1)
+    S("ellipse",{cx:cx(c)+4,cy:cy(r)-4,rx:4.5,ry:2.4,fill:"#79dba8",
+      transform:`rotate(-30 ${cx(c)+4} ${cy(r)-4})`},vineLayer);});
+  if(brownTip){const [c,r]=cells[cells.length-1];
+    S("circle",{cx:cx(c),cy:cy(r),r:5,fill:"#b08a5a"},vineLayer);}
+}
+function setGhost(){ ghostLayer.innerHTML=""; if(!ghost)return;
+  S("polyline",{points:ghost.map(([c,r])=>`${cx(c)},${cy(r)}`).join(" "),fill:"none",
+    stroke:"#93a8ad","stroke-width":4,"stroke-dasharray":"2 7","stroke-linecap":"round",opacity:.5},ghostLayer);}
+
+function reset(){
+  clearInterval(timer); running=false; phase=0; tickCount=0;
+  if(vine.length>1) ghost=vine.slice();
+  vine=[[2,10]]; visited=new Set(["2,10"]);
+  setGhost(); drawVine(vine,false);
+  bloomHolder.innerHTML=drawBloom(false);
+  document.getElementById("banner").classList.remove("show");
+  tiloHolder.innerHTML=tiloSVG(cx(2)+2,cy(10)+16,.95,"happy");
+  statusEl.textContent="The old song pins every breath to the Moss Orb — watch where the shoot wastes itself. Retune, then Grow.";
+  paint();
+}
+
+const DIRS8=[[-1,-1],[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0]];
+function targetOf(choice){ return choice==="B"?BLOOM.cell:ORBS[choice].cell; }
+function stepOnce(){
+  if(!vine.length) return false;
+  const [c,r]=vine[vine.length-1];
+  const [tc,tr]=targetOf(schedule[Math.min(phase,PHASES-1)]);
+  let best=null,bd=Infinity;
+  for(const [dc,dr] of DIRS8){
+    const nc=c+dc,nr=r+dr,k=key(nc,nr);
+    if(nc<0||nr<0||nc>=COLS||nr>=ROWS) continue;
+    if(ROCK.has(k)||visited.has(k)) continue;
+    if(dc!==0&&dr!==0){ // no corner clipping
+      if(ROCK.has(key(c+dc,r))||ROCK.has(key(c,r+dr))) continue;
+    }
+    const d=(nc-tc)**2+(nr-tr)**2;
+    if(d<bd){bd=d;best=[nc,nr];}
+  }
+  if(!best){ return false; } // fully boxed in — tangle
+  vine.push(best); visited.add(key(best[0],best[1]));
+  drawVine(vine,false);
+  if(best[0]===BLOOM.cell[0]&&best[1]===BLOOM.cell[1]){ win(); return false;}
+  return true;
+}
+function glowOrb(i){
+  orbEls.forEach((o,j)=>{ o.core.setAttribute("opacity", j===i?1:.45);
+    o.halo.setAttribute("r", j===i?24:14); });
+}
+let tickCount=0;
+function run(){
+  if(running) return;
+  resetSoft();
+  running=true; document.getElementById("runBtn").textContent="❚❚ Growing…";
+  applyPhaseVisual(0);
+  timer=setInterval(()=>{
+    if(!running) return;
+    const alive=stepOnce();
+    if(!running) return;                       // win fired inside
+    if(!alive){ fail("The shoot tangled in on itself and wilted."); return; }
+    tickCount++;
+    if(tickCount%STEPS_PER_PHASE===0){
+      const p=tickCount/STEPS_PER_PHASE;
+      if(p>=PHASES){ fail("Out of song — every breath is spent."); return; }
+      applyPhaseVisual(p);
+    }
+  },330);
+}
+function applyPhaseVisual(p){
+  phase=p; paint(p);
+  const ch=schedule[Math.min(p,PHASES-1)];
+  glowOrb(ch==="B"?-1:ch);
+  const pet=bloomHolder.querySelector("#petals");
+  if(pet) pet.style.filter = ch==="B" ? "drop-shadow(0 0 8px #ff7ab8)" : "";
+}
+function resetSoft(){ clearInterval(timer); running=false; phase=0; tickCount=0;
+  if(vine.length>1) ghost=vine.slice();
+  vine=[[2,10]]; visited=new Set(["2,10"]); setGhost(); drawVine(vine,false);
+  bloomHolder.innerHTML=drawBloom(false);
+  document.getElementById("banner").classList.remove("show");
+  document.getElementById("runBtn").textContent="▶ Grow";
+  paint(0);
+}
+function fail(msg){
+  clearInterval(timer); running=false;
+  document.getElementById("runBtn").textContent="▶ Grow";
+  drawVine(vine,true);
+  tiloHolder.innerHTML=tiloSVG(cx(2)+2,cy(10)+16,.95,"sad");
+  statusEl.textContent=msg+" (Ghost saved — adjust the song and try again.)";
+}
+function win(){
+  clearInterval(timer); running=false;
+  document.getElementById("runBtn").textContent="▶ Grow";
+  bloomHolder.innerHTML=drawBloom(true);
+  bloomHolder.querySelector("#petals").animate(
+    [{transform:"scale(.4)"},{transform:"scale(1.25)"},{transform:"scale(1)"}],
+    {duration:900,easing:"ease-out"});
+  for(let i=0;i<26;i++){ const s=S("circle",{cx:cx(BLOOM.cell[0]),cy:cy(BLOOM.cell[1]),r:2.2,fill:Math.random()>.5?"#ffd166":"#ff9de0"},fxLayer);
+    s.animate([{transform:"translate(0,0)",opacity:1},
+      {transform:`translate(${Math.random()*220-110}px,${Math.random()*160-120}px)`,opacity:0}],
+      {duration:1300+Math.random()*900,easing:"ease-out"});}
+  tiloHolder.innerHTML=tiloSVG(cx(2)+2,cy(10)+16,.95,"cheer");
+  document.getElementById("bannersub").textContent=
+    `The vine crossed in ${phase+1} breaths. A shorter song might sing sweeter.`;
+  document.getElementById("banner").classList.add("show");
+  statusEl.textContent="The Mother Bloom hums back.";
+}
+
+document.getElementById("runBtn").onclick=()=>{ if(!running) run(); };
+document.getElementById("resetBtn").onclick=reset;
+reset();
+</script>
+</body>
+</html>

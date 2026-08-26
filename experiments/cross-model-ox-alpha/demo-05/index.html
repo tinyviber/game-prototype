@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Mill Weir — cross-model ox-alpha</title>
+<style>
+  :root{ --bg:#101820; --panel:#18222c; --line:#2a3d4a; --ink:#e3edea; --dim:#8fa9a0; --accent:#ffc857;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{ background:radial-gradient(1100px 650px at 50% -10%, #1c2b33 0%, var(--bg) 60%);
+        color:var(--ink); font-family:"Avenir Next","Trebuchet MS",system-ui,sans-serif;
+        display:flex;flex-direction:column;align-items:center;padding:16px;min-height:100vh;}
+  header{text-align:center;margin-bottom:8px;}
+  header h1{font-size:25px;color:#ffe9c9;letter-spacing:.05em;}
+  header p{color:var(--dim);font-size:13px;margin-top:3px;}
+  .stage-wrap{position:relative;}
+  svg#stage{display:block;background:#15202a;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.55);}
+  .panel{width:800px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px 16px;margin-top:12px;}
+  .panel h2{font-size:13px;color:var(--accent);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px;}
+  .rule{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:10px;background:#0f1720;
+        border:1px solid var(--line);margin-bottom:7px;font-size:14px;}
+  .rule b{color:#ffd166;font-weight:600;}
+  .rbtn{background:#22333d;color:var(--ink);border:1px solid var(--line);border-radius:8px;
+        font-family:inherit;font-size:13px;padding:4px 10px;cursor:pointer;}
+  .rbtn:hover{border-color:#ffd166;}
+  .mark{min-width:52px;text-align:center;color:#fff;background:#22333d;border-radius:8px;padding:4px 6px;border:1px solid var(--line);}
+  #controls{display:flex;align-items:center;gap:14px;margin-top:10px;}
+  button.big{font-family:inherit;font-size:15px;padding:9px 22px;border-radius:10px;border:none;cursor:pointer;font-weight:600;}
+  .primary{background:#ffc857;color:#3a2a05;box-shadow:0 4px 0 #b8892c;}
+  .primary:active{transform:translateY(2px);box-shadow:0 2px 0 #b8892c;}
+  .ghostb{background:#22333d;color:var(--ink);border:1px solid var(--line);}
+  #status{font-size:14px;color:var(--dim);flex:1;min-height:20px;}
+  .banner{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+          pointer-events:none;opacity:0;transition:opacity .5s;text-align:center;}
+  .banner.show{opacity:1;}
+  .banner .big{font-size:32px;color:#ffe9b8;text-shadow:0 4px 22px rgba(255,180,80,.6);font-weight:700;}
+  .banner .sub{font-size:15px;color:#dbe8e2;margin-top:8px;max-width:560px;}
+  .legend{font-size:12px;color:var(--dim);margin-top:8px;line-height:1.5;}
+</style>
+</head>
+<body>
+<header>
+  <h1>The Mill Weir</h1>
+  <p>Rains come, droughts come. The old mill needs <b>70 turns</b> of the wheel before dusk; the beavers need their hallway dry.
+     Write the pond's two standing rules — then let the weather argue with them.</p>
+</header>
+
+<div class="stage-wrap">
+  <svg id="stage" viewBox="0 0 800 470" width="800" height="470"></svg>
+  <div class="banner" id="banner"><div class="big" id="bT"></div><div class="sub" id="bS"></div></div>
+</div>
+
+<div class="panel">
+  <h2>Pond Rules — evaluated every heartbeat, top to bottom</h2>
+  <div class="rule" id="rule1"></div>
+  <div class="rule" id="rule2"></div>
+  <div id="controls">
+    <button class="big primary" id="runBtn">▶ Open the Headgate</button>
+    <button class="big ghostb" id="resetBtn">↺ Reset</button>
+    <div id="status">The miller's old note says: “open early, the wheel must always turn.”</div>
+  </div>
+  <div class="legend">
+    The headgate feeds the wheel (needs a good splash to count as a turn). The shut board leaks a thin trickle that still counts.<br>
+    If the pond sits past the red line while the gate is <i>shut</i> for a few heartbeats, the burrow hall floods. The sky-strip up top is tomorrow's promise — read it.
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ---------- world constants (calibrated) ---------- */
+const T=112, TICK_MS=380, QUOTA=70, START_LVL=5;
+function inflowAt(t){
+  if(t<12)return 3.6; if(t<30)return 1.4; if(t<42)return .05;
+  if(t<54)return 4.4; if(t<72)return 1.4; return .05;
+}
+const BANDS=[ // for forecast ribbon
+  {from:0, to:12, kind:"rain", in:3.6},
+  {from:12,to:30, kind:"driz", in:1.4},
+  {from:30,to:42, kind:"dry",  in:.05},
+  {from:42,to:54, kind:"storm",in:4.4},
+  {from:54,to:72, kind:"driz", in:1.4},
+  {from:72,to:T,  kind:"dry",  in:.05},
+];
+const KIND_COLOR={rain:"#5aa7e8",driz:"#8fc3ef",dry:"#e8cf7a",storm:"#8f7ae8"};
+
+/* ---------- svg helpers ---------- */
+const NS="http://www.w3.org/2000/svg";
+function S(tag,attrs,parent){const el=document.createElementNS(NS,tag);
+  for(const k in attrs)el.setAttribute(k,attrs[k]);if(parent)parent.appendChild(el);return el;}
+function tiloSVG(x,y,scale,mood){
+  const py=mood==="sad"?1:mood==="cheer"?-2:-1;
+  const mouth = mood==="wow" ? `<circle cx="0" cy="-1" r="2.2" fill="#123326"/>`
+    : mood==="cheer" ? `<path d="M -4,-2 Q 0,4 4,-2 Z" fill="#123326"/>`
+    : mood==="sad" ? `<path d="M -3,1 Q 0,-2 3,1" fill="none" stroke="#123326" stroke-width="1.6" stroke-linecap="round"/>`
+    : `<path d="M -3,-1 Q 0,2 3,-1" fill="none" stroke="#123326" stroke-width="1.6" stroke-linecap="round"/>`;
+  return `<g transform="translate(${x},${y}) scale(${scale})">
+    <ellipse cx="-7" cy="0" rx="6" ry="3.4" fill="#3f9a70"/><ellipse cx="7" cy="0" rx="6" ry="3.4" fill="#3f9a70"/>
+    <ellipse cx="-17" cy="-10" rx="4.4" ry="6.4" fill="#69d19c" stroke="#1e5b41" stroke-width="1.6" transform="rotate(18 -17 -10)"/>
+    <ellipse cx="17" cy="-10" rx="4.4" ry="6.4" fill="#69d19c" stroke="#1e5b41" stroke-width="1.6" transform="rotate(-18 17 -10)"/>
+    <ellipse cx="0" cy="-12" rx="16" ry="15" fill="#69d19c" stroke="#1e5b41" stroke-width="2"/>
+    <ellipse cx="0" cy="-7" rx="9.5" ry="7.5" fill="#8fe7bc"/>
+    <path d="M 0,-26 C 2,-34 8,-37 12,-38" fill="none" stroke="#1e5b41" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="13" cy="-39" r="4" fill="#ffc857" stroke="#1e5b41" stroke-width="1.5"/>
+    <ellipse cx="-6" cy="-15" rx="5" ry="6.2" fill="#fff"/><ellipse cx="6" cy="-15" rx="5" ry="6.2" fill="#fff"/>
+    <circle cx="-5" cy="${-15+py}" r="2.6" fill="#132b20"/><circle cx="7" cy="${-15+py}" r="2.6" fill="#132b20"/>
+    ${mouth}</g>`;
+}
+
+/* ---------- scene ---------- */
+const stage=document.getElementById("stage");
+let defs=S("defs",{},stage);
+defs.innerHTML=`<linearGradient id="skyday" x1="0" y1="0" x2="0" y2="1">
+   <stop id="sk1" offset="0" stop-color="#7fb2d9"/><stop id="sk2" offset="1" stop-color="#cfe3ee"/></linearGradient>
+ <linearGradient id="waterg" x1="0" y1="0" x2="0" y2="1">
+   <stop offset="0" stop-color="#5db6d9"/><stop offset="1" stop-color="#2a6b96"/></linearGradient>`;
+const sky=S("rect",{x:0,y:0,width:800,height:470,fill:"url(#skyday)"},stage);
+// distant hills
+S("path",{d:"M0,220 Q160,140 320,215 T640,205 L800,225 L800,470 L0,470 Z",fill:"#7ba884"},stage);
+S("path",{d:"M0,280 Q200,230 420,285 T800,270 L800,470 L0,470 Z",fill:"#5d9469"},stage);
+// ground
+S("rect",{x:0,y:340,width:800,height:130,fill:"#4c7d55"},stage);
+
+// forecast ribbon
+const ribX=490,ribY=24,ribW=290,ribH=14;
+S("text",{x:ribX,y:ribY-7,"font-size":10,fill:"#31527a"},stage).textContent="the sky's promise";
+BANDS.forEach(b=>{
+  S("rect",{x:ribX+b.from/T*ribW,y:ribY,width:(b.to-b.from)/T*ribW-1,height:ribH,rx:2,
+    fill:KIND_COLOR[b.kind],opacity:.85},stage);
+});
+const playhead=S("rect",{x:ribX,y:ribY-3,width:2.5,height:ribH+6,fill:"#ff5d5d"},stage);
+
+// clouds
+const clouds=[];
+[[120,70,1],[420,50,.8]].forEach(([x,y,s],i)=>{
+  const g=S("g",{},stage);
+  g.innerHTML=`<ellipse cx="0" cy="0" rx="${46*s}" ry="${20*s}" fill="#ffffff" opacity=".92"/>
+    <ellipse cx="${-30*s}" cy="${6*s}" rx="${28*s}" ry="${14*s}" fill="#ffffff" opacity=".92"/>
+    <ellipse cx="${30*s}" cy="${8*s}" rx="${30*s}" ry="${13*s}" fill="#e9f2f8" opacity=".92"/>`;
+  clouds.push({g,x,y});
+});
+const rainLayer=S("g",{},stage);
+
+// basin
+const BX=140,BW=200,FLOOR=430,SCALE=23; // px per unit
+S("path",{d:`M ${BX-38},${FLOOR} L ${BX-38},180 q 38,-16 38,10 Z`,fill:"#6b6f76"},stage); // left wall
+S("path",{d:`M ${BX+BW+38},${FLOOR} L ${BX+BW+38},170 q -38,-14 -38,14 Z`,fill:"#6b6f76"},stage); // right wall
+S("rect",{x:BX-40,y:FLOOR,width:BW+80,height:14,fill:"#5d6167"},stage); // floor
+for(let i=0;i<26;i++)S("circle",{cx:BX-36+Math.random()*(BW+72),cy:FLOOR+Math.random()*10,r:1.6,fill:"#7d828a"},stage);
+// gauge
+for(let u=0;u<=10;u++){
+  S("line",{x1:BX+BW+40,y1:FLOOR-u*SCALE,x2:BX+BW+52,y2:FLOOR-u*SCALE,stroke:"#42525c","stroke-width":u%5?1:2},stage);
+  if(u%5===0)S("text",{x:BX+BW+56,y:FLOOR-u*SCALE+4,"font-size":10,fill:"#42525c"},stage).textContent=u;
+}
+S("line",{x1:BX,y1:FLOOR-9.7*SCALE,x2:BX+BW+38,y2:FLOOR-9.7*SCALE,stroke:"#e25555","stroke-width":2,"stroke-dasharray":"6 4"},stage);
+S("text",{x:BX+4,y:FLOOR-9.7*SCALE-6,"font-size":10,fill:"#e25555"},stage).textContent="crest — mind the burrows";
+// water
+const water=S("rect",{x:BX,y:FLOOR-START_LVL*SCALE,width:BW,height:START_LVL*SCALE,rx:3,fill:"url(#waterg)"},stage);
+const wave=S("path",{d:"",stroke:"#bfe8f5","stroke-width":2.5,fill:"none",opacity:.85},stage);
+// spillway pipe
+S("path",{d:`M ${BX+BW+20},${FLOOR-9.2*SCALE} q 60,10 66,54`,stroke:"#565b63","stroke-width":13,fill:"none","stroke-linecap":"round"},stage);
+const spillJet=S("path",{d:`M ${BX+BW+86},${FLOOR-9.2*SCALE+56} q 6,40 2,86`,stroke:"#7cc7de","stroke-width":9,fill:"none","stroke-linecap":"round",opacity:0},stage);
+// headgate + flume
+const gatePlank=S("rect",{x:BX+BW+2,y:FLOOR-64,width:16,height:64,rx:2,fill:"#7a5a38",stroke:"#5c4327","stroke-width":2},stage);
+S("rect",{x:BX+BW+18,y:FLOOR-26,width:130,height:16,rx:4,fill:"#8a6a45"},stage); // flume
+const flumeFlow=S("rect",{x:BX+BW+22,y:FLOOR-21,width:122,height:6,rx:3,fill:"#7cc7de",opacity:0},stage);
+// wheel
+const WCX=585,CY_=318,R=62;
+S("rect",{x:WCX-R-8,y:CY_+R-8,width:2*R+16,height:14,rx:4,fill:"#6b6f76"},stage);
+const wheelG=S("g",{},stage);
+wheelG.innerHTML=`${[0,45,90,135].map(a=>`<line x1="${-R}" y1="0" x2="${R}" y2="0" stroke="#8a6a45" stroke-width="7" transform="rotate(${a})"/>`).join("")}
+ <circle r="${R}" fill="none" stroke="#a3794c" stroke-width="9"/>
+ ${Array.from({length:8},(_,i)=>{const a=i*Math.PI/4;return `<rect x="${R-16}" y="-11" width="14" height="22" rx="2" fill="#c99b63" transform="rotate(${a*180/Math.PI}) translate(${0}) translate(${Math.cos(a)*0},0)" transform-origin="0 0"/>`}).join("")}
+ <circle r="7" fill="#5c4327"/>`;
+wheelG.setAttribute("transform",`translate(${WCX},${CY_})`);
+let wheelAngle=0;
+// millhouse
+S("rect",{x:648,y:252,width:126,height:132,fill:"#a3794c"},stage);
+S("path",{d:"M 638,252 L 711,204 L 784,252 Z",fill:"#8a6240"},stage);
+S("rect",{x:690,y:330,width:42,height:54,rx:3,fill:"#6b4a2f"},stage);
+const millWindow=S("rect",{x:662,y:272,width:22,height:22,rx:3,fill:"#41525c"},stage);
+S("text",{x:711,y:196,"text-anchor":"middle","font-size":11,fill:"#5c4327"},stage).textContent="the old mill";
+// flour sacks progress
+const sackRow=S("g",{},stage);
+function drawSacks(n){
+  sackRow.innerHTML="";
+  const full=Math.floor(n/10), part=(n%10)/10;
+  for(let i=0;i<7;i++){
+    const fill=i<full?"#e8d9ae":(i===full?`rgba(232,217,174,${part})`:"rgba(255,255,255,.08)");
+    S("rect",{x:756,y:398-i*17,width:26,height:15,rx:4,fill:fill,stroke:"#8a6240","stroke-width":1.2},sackRow);
+  }
+  S("text",{x:744,y:412,"text-anchor":"end","font-size":11,fill:"#3d4f43"},sackRow).textContent=`flour ${n}/${QUOTA}`;
+}
+drawSacks(0);
+// burrow
+const burrowG=S("g",{},stage);
+burrowG.innerHTML=`
+ <path d="M ${BX-38},${FLOOR} v-34 a 17,17 0 0 1 34,0 v34 Z" fill="#4a3a2a"/>
+ <circle id="beav" cx="${BX-21}" cy="${FLOOR-16}" r="9" fill="#8a5a34"/>
+ <circle cx="${BX-26}" cy="${FLOOR-23}" r="3" fill="#8a5a34"/><circle cx="${BX-16}" cy="${FLOOR-23}" r="3" fill="#8a5a34"/>
+ <text id="beavmsg" x="${BX-21}" y="${FLOOR-44}" text-anchor="middle" font-size="12" fill="#c0392b" opacity="0">!</text>`;
+const beavMsg=burrowG.querySelector("#beavmsg");
+// tilo on a little raft floating at the surface
+const raftG=S("g",{},stage);
+raftG.innerHTML=`<rect x="-20" y="-4" width="40" height="8" rx="3" fill="#8a6a45"/>`;
+const tiloRaft=S("g",{},stage);
+tiloRaft.appendChild(raftG);
+const tiloHolder=S("g",{},stage);
+function placeTilo(mood){
+  const wy=FLOOR-level*SCALE;
+  tiloRaft.setAttribute("transform",`translate(${BX+60},${wy})`);
+  tiloHolder.innerHTML=tiloSVG(BX+60,wy-6,.85,mood);
+}
+
+/* ---------- state & rules ---------- */
+let rules=[
+  {dir:"A",mark:2,act:"O"},
+  {dir:"B",mark:1,act:"C"},
+];
+let level=START_LVL,gate=false,t=0,cov=0,stallStreak=0,wet=0,timer=null,running=false,ended=false;
+
+function renderRules(){
+  [1,2].forEach(i=>{
+    const el=document.getElementById("rule"+i);el.innerHTML="";
+    const r=rules[i-1];
+    const mk=(txt,fn)=>{const b=document.createElement("button");b.className="rbtn";b.textContent=txt;b.onclick=()=>{if(!running&&!ended){fn();renderRules();}};return b;};
+    el.appendChild(mk(r.dir==="A"?"▲ rises above":"▼ falls below",()=>{r.dir=r.dir==="A"?"B":"A";}));
+    const m=document.createElement("span");m.className="mark";m.textContent=r.mark.toFixed(1);el.appendChild(m);
+    el.appendChild(mk("−",()=>{r.mark=Math.max(0,+(r.mark-.5).toFixed(1));}));
+    el.appendChild(mk("+",()=>{r.mark=Math.min(10,+(r.mark+.5).toFixed(1));}));
+    const then=document.createElement("span");then.textContent="then";el.appendChild(then);
+    el.appendChild(mk(r.act==="O"?"HEADGATE OPEN":"HEADGATE SHUT",()=>{r.act=r.act==="O"?"C":"O";}));
+    el.appendChild(document.createElement("span")).textContent="";
+  });
+}
+const statusEl=document.getElementById("status");
+
+function setSky(){
+  const p=t/T;
+  const mix=(a,b,q)=>Math.round(a+(b-a)*q);
+  const c1=[mix(127,244,p),mix(178,158,p),mix(217,94,p)];
+  const c2=[mix(207,250,p),mix(227,190,p),mix(238,130,p)];
+  stage.querySelector("#sk1").setAttribute("stop-color",`rgb(${c1})`);
+  stage.querySelector("#sk2").setAttribute("stop-color",`rgb(${c2})`);
+}
+function renderWorld(){
+  const wy=FLOOR-level*SCALE;
+  water.setAttribute("y",wy);water.setAttribute("height",level*SCALE);
+  wave.setAttribute("d",`M ${BX},${wy} q 25,-4 50,0 t 50,0 t 50,0 t ${BW-150},0`);
+  gatePlank.setAttribute("y",gate?FLOOR-108:FLOOR-64);
+  flumeFlow.setAttribute("opacity",gate&&level>.2?.95:0);
+  spillJet.setAttribute("opacity",(gate&&level>=9.6)?.95:0);
+  setSky();
+  // weather visuals
+  const band=BANDS.find(b=>t>=b.from&&t<b.to)||BANDS[BANDS.length-1];
+  rainLayer.innerHTML="";
+  if(band.in>=1){
+    const c=clouds[band.kind==="storm"?1:0];
+    c.g.setAttribute("transform",`translate(${BX+BW/2},${band.kind==="storm"?46:60}) scale(${band.kind==="storm"?1.25:1})`);
+    c.g.style.opacity=.98;
+    const other=clouds.find(x=>x!==c); other.g.style.opacity=0;
+    const n=band.in>2?26:12;
+    for(let i=0;i<n;i++){
+      const rx=BX-20+((i*53+band.kind.length*7)%240);
+      S("line",{x1:rx,y1:86,x2:rx-4,y2:104+((i*29)%18),stroke:"#9fd3ea","stroke-width":1.6,opacity:.75},rainLayer);
+    }
+  }else{
+    clouds.forEach(c=>c.g.style.opacity=0);
+  }
+  playhead.setAttribute("x",ribX+t/T*ribW);
+  beavMsg.setAttribute("opacity",level>9.3?1:0);
+  drawSacks(Math.min(QUOTA,cov));
+  const mood=ended?(won?"cheer":"sad"):((level>9.3||stallStreak>8)?"wow":"happy");
+  placeTilo(mood);
+  // cobweb on idle wheel
+  let web=stage.querySelector("#web");
+  if(stallStreak>8){
+    if(!web){web=S("g",{id:"web"},stage);
+      web.innerHTML=`<g transform="translate(${WCX},${CY_})" stroke="#e8e4da" stroke-width="1" fill="none" opacity=".8">
+        ${[0,60,120].map(a=>`<line x1="0" y1="0" x2="${Math.cos(a*Math.PI/180)*R*.9}" y2="${Math.sin(a*Math.PI/180)*R*.9}"/>`).join("")}
+        <path d="M ${-R*.5},0 q ${R*.25},${-R*.2} ${R*.5},0 q ${R*.25},${R*.2} ${R*.5},0 M ${-R*.25},0 q ${R*.125},${-R*.1} ${R*.25},0 q ${R*.125},${R*.1} ${R*.25},0"/>
+      </g>`;}
+    web.setAttribute("opacity",Math.min(.9,(stallStreak-8)*.12));
+  }else if(web)web.remove();
+}
+let won=false;
+function tick(){
+  t++;
+  // evaluate rules top-to-bottom
+  for(const r of rules){ if(r.dir==="A"?level>r.mark:level<r.mark) gate=(r.act==="O"); }
+  const before=level;
+  let out=gate?Math.min(2.4,level):(level>0?Math.min(0.6,level):0);
+  level+=inflowAt(t)-out;
+  let spilled=false;
+  if(level>9.7){
+    if(gate){level=9.7;spilled=true;}
+    else{
+      wet++;
+      renderWorld();
+      if(wet>=4)return floodFail();
+    }
+  }
+  else wet=0;
+  if(level<0)level=0;
+  if(out>=0.6){cov++;stallStreak=0;}else{stallStreak++;}
+  wheelAngle+=out*(stallStreak>0?.06:.5);
+  wheelG.setAttribute("transform",`translate(${WCX},${CY_}) rotate(${wheelAngle*57.3/R})`);
+  if(spilled&&t%3===0)statusEl.textContent="The spillway sighs — surplus slips away to the river.";
+  else if(stallStreak===10)statusEl.textContent="The wheel creaks… and stops. Cobwebs gather.";
+  else if(level>9.3&&t%4===0)statusEl.textContent="The beavers bang their shutter — the hall is seeping!";
+  renderWorld();
+  if(t>=T)return duskVerdict();
+}
+function floodFail(){
+  clearInterval(timer);running=false;ended=true;won=false;
+  beavMsg.setAttribute("opacity",1);
+  document.getElementById("runBtn").textContent="▶ Open the Headgate";
+  document.getElementById("bT").textContent="The burrow hall floods!";
+  document.getElementById("bS").textContent=`The pond crested while the headgate was shut. The beavers float out, unimpressed. Turns of the wheel: ${cov}.`;
+  document.getElementById("banner").classList.add("show");
+  setTimeout(()=>document.getElementById("banner").classList.remove("show"),4800);
+  statusEl.textContent="Failed: crest + shut gate = flooded burrows.";
+  placeTilo("sad");
+}
+function duskVerdict(){
+  clearInterval(timer);running=false;ended=true;
+  document.getElementById("runBtn").textContent="▶ Open the Headgate";
+  if(cov>=QUOTA){
+    won=true;
+    millWindow.setAttribute("fill","#ffd166");
+    for(let i=0;i<24;i++){const s=S("circle",{cx:711,cy:260,r:2.2,fill:i%2?"#ffd166":"#fff"},stage);
+      s.animate([{transform:"translate(0,0)",opacity:1},{transform:`translate(${Math.random()*180-90}px,${Math.random()*160-100}px)`,opacity:0}],{duration:1500,easing:"ease-out"});}
+    document.getElementById("bT").textContent="Flour for everyone!";
+    document.getElementById("bS").textContent=`${cov} turns of the wheel before dusk. The miller lights the window; the beavers keep dry feet.`;
+    statusEl.textContent="Won! The quota is met.";
+  }else{
+    won=false;
+    document.getElementById("bT").textContent="Dusk — short of flour.";
+    document.getElementById("bS").textContent=`Only ${cov} of ${QUOTA} turns. Where did the wheel stand still? Read the cobwebs and the sky's promise.`;
+    statusEl.textContent="Failed: quota missed.";
+  }
+  document.getElementById("banner").classList.add("show");
+  setTimeout(()=>document.getElementById("banner").classList.remove("show"),5200);
+  renderWorld();
+}
+function run(){
+  if(running)return;
+  ended=false;won=false;t=0;cov=0;stallStreak=0;wet=0;level=START_LVL;gate=false;wheelAngle=0;
+  millWindow.setAttribute("fill","#41525c");
+  running=true;
+  document.getElementById("runBtn").textContent="❚❚ milling…";
+  statusEl.textContent="Rain inbound — watch the sky's promise.";
+  timer=setInterval(tick,TICK_MS);
+}
+function reset(){
+  clearInterval(timer);running=false;ended=false;won=false;
+  rules=[{dir:"A",mark:2,act:"O"},{dir:"B",mark:1,act:"C"}];
+  level=START_LVL;gate=false;t=0;cov=0;stallStreak=0;wet=0;wheelAngle=0;
+  millWindow.setAttribute("fill","#41525c");
+  document.getElementById("banner").classList.remove("show");
+  document.getElementById("runBtn").textContent="▶ Open the Headgate";
+  statusEl.textContent="The miller's old note says: “open early, the wheel must always turn.”";
+  renderRules();renderWorld();
+}
+document.getElementById("runBtn").onclick=run;
+document.getElementById("resetBtn").onclick=reset;
+renderRules();renderWorld();
+placeTilo("happy");
+</script>
+</body>
+</html>

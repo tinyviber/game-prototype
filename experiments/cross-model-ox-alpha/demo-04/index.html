@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Fog Chimes — cross-model ox-alpha</title>
+<style>
+  :root{ --bg:#0f1420; --panel:#161d2b; --line:#28344c; --ink:#e4ebf7; --dim:#8b9ab5; --accent:#ffd166;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{ background:radial-gradient(1100px 650px at 50% -10%, #182036 0%, var(--bg) 60%);
+        color:var(--ink); font-family:"Avenir Next","Trebuchet MS",system-ui,sans-serif;
+        display:flex;flex-direction:column;align-items:center;padding:16px;min-height:100vh;}
+  header{text-align:center;margin-bottom:8px;}
+  header h1{font-size:25px;color:#d8e6ff;letter-spacing:.05em;}
+  header p{color:var(--dim);font-size:13px;margin-top:3px;}
+  .stage-wrap{position:relative;}
+  svg#stage{display:block;background:#111826;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.55);}
+  .panel{width:800px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px 16px;margin-top:12px;}
+  .panel h2{font-size:13px;color:var(--accent);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px;}
+  #controls{display:flex;align-items:center;gap:12px;margin-top:4px;flex-wrap:wrap;}
+  button.big,.pbtn{font-family:inherit;font-size:15px;padding:9px 20px;border-radius:10px;border:none;cursor:pointer;font-weight:600;}
+  .primary{background:#ffd166;color:#3a2a05;box-shadow:0 4px 0 #b8892c;}
+  .primary:active{transform:translateY(2px);box-shadow:0 2px 0 #b8892c;}
+  .ghostb,.pbtn{background:#223049;color:var(--ink);border:1px solid var(--line);}
+  .pbtn.planting{border-color:#ffd166;background:#3a3050;}
+  #status{font-size:14px;color:var(--dim);flex:1;min-height:20px;}
+  .banner{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+          pointer-events:none;opacity:0;transition:opacity .5s;text-align:center;}
+  .banner.show{opacity:1;}
+  .banner .big{font-size:32px;color:#ffe9b8;text-shadow:0 4px 22px rgba(255,200,80,.6);font-weight:700;}
+  .banner .sub{font-size:15px;color:#d9e4f8;margin-top:8px;max-width:560px;}
+  .legend{font-size:12px;color:var(--dim);margin-top:8px;line-height:1.5;}
+</style>
+</head>
+<body>
+<header>
+  <h1>The Fog Chimes</h1>
+  <p>A moonmoth crosses gardens swallowed by fog, following a route nobody remembers. In darkness its glow gutters out.
+     Plant chimes that ring when it passes — each rings its paired lamp awake for a few heartbeats.</p>
+</header>
+
+<div class="stage-wrap">
+  <svg id="stage" viewBox="0 0 800 470" width="800" height="470"></svg>
+  <div class="banner" id="banner"><div class="big">Moonlit!</div><div class="sub" id="bSub"></div></div>
+</div>
+
+<div class="panel">
+  <div id="controls">
+    <button class="big primary" id="runBtn">🌙 Release the Moth</button>
+    <button class="pbtn" id="plantBtn">✿ plant a pair (<span id="pairsLeft">3</span>)</button>
+    <button class="ghostb" id="resetRunBtn">↺ recall moth</button>
+    <button class="ghostb" id="clearBtn">✧ clear traces</button>
+    <div id="status">The fog keeps its secrets. Listen first.</div>
+  </div>
+  <div class="legend">
+    Planting: pick this, tap where the <b>chime</b> stands, then tap where its <b>lamp</b> hangs. Tap an item to uproot the pair.<br>
+    Golden crumbs only fall where light actually touched the moth — your network is your map of the dark.
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ---------- world ---------- */
+const W=800,H=470;
+const HIVE={x:70,y:390,r:95}, FLOWER={x:735,y:105,r:95};
+const WAYPTS=[[70,390],[220,330],[330,360],[430,250],[520,290],[620,180],[735,105]];
+const SPEED=57;            // px per second
+const GLOW_MAX=80, DRAIN=18, REFILL=50, LAMP_SECONDS=4, PAIR_BUDGET=3;
+
+/* catmull-rom sampled path */
+function samplePath(){
+  const pts=[];
+  const P=WAYPTS;
+  for(let i=0;i<P.length-1;i++){
+    const p0=P[Math.max(0,i-1)],p1=P[i],p2=P[i+1],p3=P[Math.min(P.length-1,i+2)];
+    const steps=Math.max(6,Math.round(Math.hypot(p2[0]-p1[0],p2[1]-p1[1])/8));
+    for(let s=0;s<steps;s++){
+      const t=s/steps,t2=t*t,t3=t2*t;
+      const x=.5*((2*p1[0])+(-p0[0]+p2[0])*t+(2*p0[0]-5*p1[0]+4*p2[0]-p3[0])*t2+(-p0[0]+3*p1[0]-3*p2[0]+p3[0])*t3);
+      const y=.5*((2*p1[1])+(-p0[1]+p2[1])*t+(2*p0[1]-5*p1[1]+4*p2[1]-p3[1])*t2+(-p0[1]+3*p1[1]-3*p2[1]+p3[1])*t3);
+      pts.push([x,y]);
+    }
+  }
+  pts.push(P[P.length-1].slice());
+  return pts;
+}
+const PATH=samplePath();
+let cumLen=[0];
+for(let i=1;i<PATH.length;i++)cumLen[i]=cumLen[i-1]+Math.hypot(PATH[i][0]-PATH[i-1][0],PATH[i][1]-PATH[i-1][1]);
+const TOTAL=cumLen[cumLen.length-1];
+
+/* ---------- svg ---------- */
+const NS="http://www.w3.org/2000/svg";
+function S(tag,attrs,parent){const el=document.createElementNS(NS,tag);
+  for(const k in attrs)el.setAttribute(k,attrs[k]);if(parent)parent.appendChild(el);return el;}
+const stage=document.getElementById("stage");
+let defs=S("defs",{},stage);
+defs.innerHTML=`<radialGradient id="lamplight"><stop offset="0" stop-color="#ffdf9e" stop-opacity=".55"/><stop offset=".6" stop-color="#ffce6b" stop-opacity=".18"/><stop offset="1" stop-color="#ffce6b" stop-opacity="0"/></radialGradient>
+<radialGradient id="havenlight"><stop offset="0" stop-color="#bfe3ff" stop-opacity=".4"/><stop offset="1" stop-color="#bfe3ff" stop-opacity="0"/></radialGradient>`;
+S("rect",{x:0,y:0,width:W,height:H,fill:"#101828"},stage);
+// ground silhouettes
+S("path",{d:"M0,430 Q140,380 300,420 T620,415 T800,425 L800,470 L0,470 Z",fill:"#152234"},stage);
+for(let i=0;i<24;i++){const x=Math.random()*W,y=380+Math.random()*80;
+  S("path",{d:`M ${x},${y} q 6,-16 12,-2`,stroke:"#1c2c44","stroke-width":3,fill:"none"},stage);}
+// hive & flower
+S("g",{},stage).innerHTML=`
+  <ellipse cx="${HIVE.x}" cy="${HIVE.y}" rx="${HIVE.r}" ry="${HIVE.r*.8}" fill="url(#havenlight)"/>
+  <circle cx="${HIVE.x}" cy="${HIVE.y}" r="17" fill="#7a5c33"/>
+  <path d="M ${HIVE.x-11},${HIVE.y-6} h22 M ${HIVE.x-13},${HIVE.y+2} h26 M ${HIVE.x-11},${HIVE.y+10} h22" stroke="#5c431f" stroke-width="3"/>
+  <text x="${HIVE.x}" y="${HIVE.y+42}" text-anchor="middle" font-size="11" fill="#93a8cc">hive</text>`;
+const flowerG=S("g",{},stage);
+flowerG.innerHTML=`
+  <ellipse cx="${FLOWER.x}" cy="${FLOWER.y}" rx="${FLOWER.r}" ry="${FLOWER.r*.8}" fill="url(#havenlight)"/>
+  <line x1="${FLOWER.x}" y1="${FLOWER.y+34}" x2="${FLOWER.x}" y2="${FLOWER.y+6}" stroke="#2f6b4f" stroke-width="3"/>
+  <g id="moonfl">
+    ${[0,72,144,216,288].map(a=>`<ellipse cx="0" cy="-8" rx="4.5" ry="8.5" fill="#cfe8ff" transform="translate(${FLOWER.x},${FLOWER.y}) rotate(${a})"/>`).join("")}
+    <circle cx="${FLOWER.x}" cy="${FLOWER.y}" r="4.5" fill="#fff3c4"/>
+  </g>
+  <text x="${FLOWER.x}" y="${FLOWER.y+52}" text-anchor="middle" font-size="11" fill="#93a8cc">moonflower</text>`;
+// fog blobs
+const fogLayer=S("g",{},stage);
+[[260,260,190,110],[480,210,210,120],[600,320,170,100],[350,400,200,90]].forEach(([x,y,rx,ry],i)=>{
+  const e=S("ellipse",{cx:x,cy:y,rx,ry,fill:"#c8d6ee",opacity:.06},fogLayer);
+  e.animate([{transform:"translateX(0)"},{transform:`translateX(${i%2?38:-38}px)`},{transform:"translateX(0)"}],
+    {duration:9000+i*1500,iterations:Infinity,easing:"ease-in-out"});
+});
+/* layers */
+const threadLayer=S("g",{},stage);
+const lightLayer=S("g",{},stage);
+const crumbLayer=S("g",{},stage);
+const itemLayer=S("g",{},stage);
+const fxLayer=S("g",{},stage);
+const mothLayer=S("g",{},stage);
+
+function tiloSVG(x,y,scale,mood){
+  const py=mood==="sad"?1:mood==="cheer"?-2:-1;
+  const mouth = mood==="wow" ? `<circle cx="0" cy="-1" r="2.2" fill="#123326"/>`
+    : mood==="cheer" ? `<path d="M -4,-2 Q 0,4 4,-2 Z" fill="#123326"/>`
+    : mood==="sad" ? `<path d="M -3,1 Q 0,-2 3,1" fill="none" stroke="#123326" stroke-width="1.6" stroke-linecap="round"/>`
+    : `<path d="M -3,-1 Q 0,2 3,-1" fill="none" stroke="#123326" stroke-width="1.6" stroke-linecap="round"/>`;
+  return `<g transform="translate(${x},${y}) scale(${scale})">
+    <ellipse cx="-7" cy="0" rx="6" ry="3.4" fill="#3f9a70"/><ellipse cx="7" cy="0" rx="6" ry="3.4" fill="#3f9a70"/>
+    <ellipse cx="-17" cy="-10" rx="4.4" ry="6.4" fill="#69d19c" stroke="#1e5b41" stroke-width="1.6" transform="rotate(18 -17 -10)"/>
+    <ellipse cx="17" cy="-10" rx="4.4" ry="6.4" fill="#69d19c" stroke="#1e5b41" stroke-width="1.6" transform="rotate(-18 17 -10)"/>
+    <ellipse cx="0" cy="-12" rx="16" ry="15" fill="#69d19c" stroke="#1e5b41" stroke-width="2"/>
+    <ellipse cx="0" cy="-7" rx="9.5" ry="7.5" fill="#8fe7bc"/>
+    <path d="M 0,-26 C 2,-34 8,-37 12,-38" fill="none" stroke="#1e5b41" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="13" cy="-39" r="4" fill="#ffc857" stroke="#1e5b41" stroke-width="1.5"/>
+    <ellipse cx="-6" cy="-15" rx="5" ry="6.2" fill="#fff"/><ellipse cx="6" cy="-15" rx="5" ry="6.2" fill="#fff"/>
+    <circle cx="-5" cy="${-15+py}" r="2.6" fill="#132b20"/><circle cx="7" cy="${-15+py}" r="2.6" fill="#132b20"/>
+    ${mouth}</g>`;
+}
+const tiloHolder=S("g",{},stage);
+tiloHolder.innerHTML=tiloSVG(HIVE.x+46,HIVE.y+8,.9,"happy");
+
+/* ---------- state ---------- */
+let pairs=[];            // {chime:[x,y], lamp:[x,y], el, lightEl, onUntil}
+let planting=false, pendingChime=null;
+let running=false, raf=null, lastT=0, distAlong=0, glow=GLOW_MAX, crumbs=[], lastCrumbT=0, lastPingT=-9, done=false;
+let pairsLeft=PAIR_BUDGET;
+
+const pairsLeftEl=document.getElementById("pairsLeft");
+const statusEl=document.getElementById("status");
+
+function renderItems(){
+  itemLayer.innerHTML="";threadLayer.innerHTML="";lightLayer.innerHTML="";
+  pairs.forEach((p,idx)=>{
+    S("path",{d:`M ${p.chime[0]},${p.chime[1]} Q ${(p.chime[0]+p.lamp[0])/2},${Math.min(p.chime[1],p.lamp[1])-36} ${p.lamp[0]},${p.lamp[1]}`,
+      fill:"none",stroke:"#5b6f96","stroke-width":1.6,"stroke-dasharray":"3 6",opacity:.8},threadLayer);
+    // chime
+    const g=S("g",{class:"chime"},itemLayer);
+    g.innerHTML=`<line x1="${p.chime[0]}" y1="${p.chime[1]}" x2="${p.chime[0]}" y2="${p.chime[1]-18}" stroke="#3f7a5c" stroke-width="2.5"/>
+      <circle cx="${p.chime[0]}" cy="${p.chime[1]-22}" r="7" fill="#9fd8c8" stroke="#2c5c4c" stroke-width="2"/>
+      <circle cx="${p.chime[0]}" cy="${p.chime[1]-22}" r="2" fill="#2c5c4c"/>`;
+    g.addEventListener("click",()=>uproot(idx));
+    // lamp
+    const lg=S("g",{},itemLayer);
+    lg.innerHTML=`<line x1="${p.lamp[0]}" y1="${p.lamp[1]}" x2="${p.lamp[0]}" y2="${p.lamp[1]-26}" stroke="#4a5568" stroke-width="3"/>
+      <circle cx="${p.lamp[0]}" cy="${p.lamp[1]-32}" r="7" fill="#3a4658" stroke="#66788f" stroke-width="2"/>
+      <circle id="bulb" cx="${p.lamp[0]}" cy="${p.lamp[1]-32}" r="3.4" fill="#6a7a92"/>`;
+    lg.addEventListener("click",()=>uproot(idx));
+    p.bulbEl=lg.querySelector("#bulb");
+    p.lightEl=S("circle",{cx:p.lamp[0],cy:p.lamp[1]-32,r:88,fill:"url(#lamplight)",opacity:0},lightLayer);
+  });
+}
+function uproot(i){ if(running)return; pairs.splice(i,1); pairsLeft++; pairsLeftEl.textContent=pairsLeft; renderItems(); }
+
+stage.addEventListener("click",ev=>{
+  if(!planting||running)return;
+  const pt=stage.getBoundingClientRect();
+  const x=Math.round(ev.clientX-pt.left), y=Math.round(ev.clientY-pt.top);
+  if(!pendingChime){ pendingChime=[x,y]; statusEl.textContent="Chime set — now tap where its lamp should hang."; }
+  else{
+    pairs.push({chime:pendingChime,lamp:[x,y],onUntil:-9});
+    pendingChime=null;pairsLeft--;pairsLeftEl.textContent=pairsLeft;
+    renderItems();
+    if(pairsLeft<=0){planting=false;document.getElementById("plantBtn").classList.remove("planting");}
+    else statusEl.textContent="Pair planted. Plant another or release the moth.";
+  }
+});
+
+/* ---------- moth ---------- */
+const mothG=S("g",{},mothLayer);
+mothG.innerHTML=`
+  <circle id="mhalo" r="16" fill="#cfe8ff" opacity=".18"/>
+  <g id="mbody">
+    <ellipse cx="0" cy="0" rx="4" ry="7" fill="#efe6d0"/>
+    <ellipse id="w1" cx="-5" cy="-2" rx="7" ry="4.5" fill="#d8e6ff" opacity=".92"/>
+    <ellipse id="w2" cx="5" cy="-2" rx="7" ry="4.5" fill="#d8e6ff" opacity=".92"/>
+  </g>
+  <rect id="mbar" x="-11" y="-16" width="22" height="3.5" rx="2" fill="#123"/>
+`;
+const halo=mothG.querySelector("#mhalo"), bar=mothG.querySelector("#mbar"),
+      w1=mothG.querySelector("#w1"), w2=mothG.querySelector("#w2");
+
+function posAt(d){
+  d=Math.max(0,Math.min(TOTAL,d));
+  let lo=0,hi=cumLen.length-1;
+  while(lo<hi){const m=(lo+hi>>1);if(cumLen[m]<d)lo=m+1;else hi=m;}
+  const i=Math.max(1,lo), seg=(d-cumLen[i-1])/Math.max(.0001,cumLen[i]-cumLen[i-1]);
+  return [PATH[i-1][0]+(PATH[i][0]-PATH[i-1][0])*seg, PATH[i-1][1]+(PATH[i][1]-PATH[i-1][1])*seg];
+}
+function litAt(x,y,t){
+  if(Math.hypot(x-HIVE.x,y-HIVE.y)<HIVE.r)return true;
+  if(Math.hypot(x-FLOWER.x,y-FLOWER.y)<FLOWER.r)return true;
+  return pairs.some(p=>t<p.onUntil && Math.hypot(x-p.lamp[0],y-(p.lamp[1]-32))<88);
+}
+
+/* ---------- loop ---------- */
+let simT=0; // seconds since release
+function frame(ts){
+  if(!running)return;
+  if(!lastT)lastT=ts;
+  const dt=Math.min(.05,(ts-lastT)/1000);lastT=ts;simT+=dt;
+  distAlong+=SPEED*dt;
+  const [x,y]=posAt(distAlong);
+  const lit=litAt(x,y,simT);
+  glow=Math.max(0,Math.min(GLOW_MAX,glow+(lit?REFILL:-DRAIN)*dt));
+  // chimes
+  pairs.forEach((p,i)=>{
+    if(Math.hypot(x-p.chime[0],y-p.chime[1])<34 && simT-lastPingT[i]>1.2){
+      p.onUntil=simT+LAMP_SECONDS; lastPingT[i]=simT;
+      p.bulbEl.setAttribute("fill","#ffd166");
+      const g=itemLayer.querySelectorAll(".chime")[i];
+      if(g){g.animate([{transform:"rotate(0deg)"},{transform:"rotate(-16deg)"},{transform:"rotate(14deg)"},{transform:"rotate(0deg)"}],{duration:500});}
+      const ring=S("circle",{cx:p.chime[0],cy:p.chime[1]-22,r:8,fill:"none",stroke:"#9fd8c8","stroke-width":2.5},fxLayer);
+      ring.animate([{r:8,opacity:.95},{r:56,opacity:0}],{duration:800});
+      statusEl.textContent="A chime rings — somewhere a lamp blinks awake.";
+    }
+    if(simT>p.onUntil)p.bulbEl.setAttribute("fill","#6a7a92");
+    p.lightEl.setAttribute("opacity",simT<p.onUntil?"1":"0");
+  });
+  // breadcrumbs where observed
+  const observed=lit || pairs.some((p,i)=>lastPingT[i]>=simT-.6);
+  if(observed && simT-lastCrumbT>.22){
+    lastCrumbT=simT;
+    const c=S("circle",{cx:x,cy:y,r:2.6,fill:"#ffd166",opacity:.85},crumbLayer);
+    setTimeout(()=>c.setAttribute("opacity",".38"),900);
+    crumbs.push(c);
+  }
+  // draw moth
+  mothG.setAttribute("transform",`translate(${x},${y})`);
+  const flicker=.12+(glow/GLOW_MAX)*.3;
+  halo.setAttribute("opacity",flicker.toFixed(2));
+  halo.setAttribute("r",(8+(glow/GLOW_MAX)*14).toFixed(1));
+  bar.width.baseVal.value=22*(glow/GLOW_MAX);
+  bar.setAttribute("fill",glow<25?"#ff7a6b":"#ffd166");
+  const flap=Math.sin(simT*22)*4;
+  w1.setAttribute("cy",-2-flap*.4);w2.setAttribute("cy",-2-flap*.4);
+  w1.setAttribute("rx",7-Math.abs(flap));w2.setAttribute("rx",7-Math.abs(flap));
+  const m=tiloMood();
+  if(m!==lastMood){lastMood=m;tiloHolder.innerHTML=tiloSVG(HIVE.x+46,HIVE.y+8,.9,m);}
+  if(distAlong>=TOTAL){ winMoonth(); return; }
+  if(glow<=0){ sleepFail(x,y); return; }
+  raf=requestAnimationFrame(frame);
+}
+let lastMood=null;
+function tiloMood(){ if(glow<25)return"sad"; if(litAt(...posAt(distAlong),simT))return"happy"; return glow<50?"wow":"happy"; }
+
+function winMoonth(){
+  running=false;done=true;cancelAnimationFrame(raf);
+  flowerG.querySelector("#moonfl").animate(
+    [{transform:`translate(0,0) scale(1)`},{transform:`translate(${FLOWER.x*(1-1.25)}px,${FLOWER.y*(1-1.25)}px) scale(1.25)`},{transform:`translate(0,0) scale(1)`}],
+    {duration:1000});
+  for(let i=0;i<24;i++){const s=S("circle",{cx:FLOWER.x,cy:FLOWER.y,r:2.2,fill:i%2?"#ffd166":"#cfe8ff"},fxLayer);
+    s.animate([{transform:"translate(0,0)",opacity:1},{transform:`translate(${Math.random()*160-80}px,${Math.random()*140-70}px)`,opacity:0}],
+      {duration:1400,easing:"ease-out"});}
+  document.getElementById("bSub").textContent="The moth spills its gathered light into the moonflower. The garden will dream well tonight.";
+  document.getElementById("banner").classList.add("show");
+  setTimeout(()=>document.getElementById("banner").classList.remove("show"),4500);
+  statusEl.textContent="Moonlit success.";
+  document.getElementById("runBtn").textContent="🌙 Release the Moth";
+}
+function sleepFail(x,y){
+  running=false;cancelAnimationFrame(raf);
+  mothG.animate([{transform:`translate(${x},${y})`},{transform:`translate(${x+8},${y+26}) rotate(24deg)`}],{duration:900,fill:"forwards"});
+  const z=S("text",{x:x+16,y:y-14,"font-size":14,fill:"#9fb4d8","font-style":"italic"},fxLayer);
+  z.textContent="z z z";
+  document.getElementById("bSub").textContent="Its glow guttered out in the unlit fog. Where did the darkness win? The golden crumbs remember the light you had.";
+  document.getElementById("banner").classList.add("show");
+  setTimeout(()=>document.getElementById("banner").classList.remove("show"),4800);
+  statusEl.textContent="Asleep in the fog — read the crumbs, replant, try again.";
+  document.getElementById("runBtn").textContent="🌙 Release the Moth";
+}
+
+/* ---------- controls ---------- */
+document.getElementById("runBtn").onclick=()=>{
+  if(running)return;
+  mothG.getAnimations().forEach(a=>a.cancel());
+  mothG.setAttribute("transform","translate(0,0)");
+  fxLayer.innerHTML="";
+  distAlong=0;glow=GLOW_MAX;simT=0;lastT=0;lastCrumbT=-1;
+  lastPingT=pairs.map(()=>-9);
+  running=true;
+  document.getElementById("runBtn").textContent="❚❚ flying…";
+  raf=requestAnimationFrame(frame);
+};
+document.getElementById("plantBtn").onclick=e=>{
+  if(running||pairsLeft<=0)return;
+  planting=!planting;pendingChime=null;
+  e.currentTarget.classList.toggle("planting",planting);
+  statusEl.textContent=planting?"Tap the map to set a chime…":"";
+};
+document.getElementById("resetRunBtn").onclick=()=>{
+  running=false;cancelAnimationFrame(raf);
+  mothG.getAnimations().forEach(a=>a.cancel());
+  fxLayer.innerHTML="";
+  distAlong=0;glow=GLOW_MAX;
+  mothG.setAttribute("transform","translate(0,0)");
+  document.getElementById("runBtn").textContent="🌙 Release the Moth";
+};
+document.getElementById("clearBtn").onclick=()=>{crumbs.forEach(c=>c.remove());crumbs=[];};
+
+/* ---------- flawed default network ---------- */
+pairs=[
+  {chime:[225,345], lamp:[178,268]},
+  {chime:[452,212], lamp:[420,168]},
+  {chime:[608,232], lamp:[585,286]},
+];
+renderItems();
+</script>
+</body>
+</html>

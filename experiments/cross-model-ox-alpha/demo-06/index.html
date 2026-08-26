@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Spore Telegraph — cross-model ox-alpha</title>
+<style>
+  :root{ --bg:#121020; --panel:#1a1730; --line:#332d55; --ink:#eae6f8; --dim:#9a92c2; --accent:#ffd166;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{ background:radial-gradient(1100px 650px at 50% -10%, #201a3a 0%, var(--bg) 60%);
+        color:var(--ink); font-family:"Avenir Next","Trebuchet MS",system-ui,sans-serif;
+        display:flex;flex-direction:column;align-items:center;padding:16px;min-height:100vh;}
+  header{text-align:center;margin-bottom:8px;}
+  header h1{font-size:25px;color:#e8ddff;letter-spacing:.05em;}
+  header p{color:var(--dim);font-size:13px;margin-top:3px;}
+  .stage-wrap{position:relative;}
+  svg#stage{display:block;background:#17132a;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.55);}
+  .panel{width:800px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px 16px;margin-top:12px;
+         display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  button.big{font-family:inherit;font-size:15px;padding:9px 20px;border-radius:10px;border:none;cursor:pointer;font-weight:600;}
+  .primary{background:#ffd166;color:#3a2a05;box-shadow:0 4px 0 #b8892c;}
+  .primary:active{transform:translateY(2px);box-shadow:0 2px 0 #b8892c;}
+  .ghostb{background:#282247;color:var(--ink);border:1px solid var(--line);}
+  #status{font-size:14px;color:var(--dim);flex:1;min-height:20px;}
+  .banner{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+          pointer-events:none;opacity:0;transition:opacity .5s;text-align:center;}
+  .banner.show{opacity:1;}
+  .banner .big{font-size:32px;color:#ffe9b8;text-shadow:0 4px 22px rgba(200,140,255,.6);font-weight:700;}
+  .banner .sub{font-size:15px;color:#ddd6f8;margin-top:8px;max-width:580px;}
+  .legend{width:800px;font-size:12px;color:var(--dim);margin-top:8px;line-height:1.5;}
+</style>
+</head>
+<body>
+<header>
+  <h1>The Spore Telegraph</h1>
+  <p>The chant-totem hums its five-note song down three spouts. The Great Door wakes only for its password —
+     <b>blue · blue · red</b> — each note landing in its own carved socket. Rewire the fungal switchboard; graft new caps onto the mushrooms.</p>
+</header>
+
+<div class="stage-wrap">
+  <svg id="stage" viewBox="0 0 800 430" width="800" height="430"></svg>
+  <div class="banner" id="banner"><div class="big">The old road opens.</div><div class="sub" id="bSub"></div></div>
+</div>
+
+<div class="panel">
+  <button class="big primary" id="runBtn">chantsong ▶</button>
+  <button class="big ghostb" id="recallBtn">↺ recall spores</button>
+  <button class="big ghostb" id="resetBtn">⟲ reset workshop</button>
+  <div id="status"></div>
+</div>
+<div class="legend">
+  Drag from a glowing <b>out-dot</b> to another mushroom or a door socket — the old tendril is replaced.<br>
+  Tap a mushroom to graft the next cap (<b>relay »</b> passes · <b>prism ⇄</b> turns red↔blue · <b>snail @</b> dawdles) — each graft spends one spore from Tilo's pouch.
+</div>
+
+<script>
+"use strict";
+/* ---------- world ---------- */
+const RED="#ff6b81", BLUE="#5ab7ff";
+const SEQ=["R","B","B","R","B"];
+const EXPECT=["B","B","R"];
+const CAPS={
+  RELAY:{glyph:"»",label:"relay",dwell:.45,swap:false},
+  PRISM:{glyph:"⇄",label:"prism",dwell:.45,swap:true},
+  SNAIL:{glyph:"@", label:"snail",dwell:2.1,swap:false},
+};
+const CYCLE=["RELAY","PRISM","SNAIL"];
+const SPOUTS=[{x:128,y:112},{x:128,y:205},{x:128,y:298}];
+const SHROOMS=[
+  {x:305,y:118,cap:"RELAY"},
+  {x:305,y:238,cap:"RELAY"},
+  {x:305,y:352,cap:"RELAY"},
+  {x:492,y:172,cap:"RELAY"},
+  {x:492,y:292,cap:"RELAY"},
+];
+const SOCKETS=[{x:692,y:132},{x:692,y:212},{x:692,y:292}];
+let wires={};   // outId -> toId
+let grafts=2;
+const OUT=id=>id[0]==="S"?SPOUTS[+id[1]]:SHROOMS[+id[1]];
+const NODEPOS=id=>{
+  if(id[0]==="S")return{x:SPOUTS[+id[1]].x,y:SPOUTS[+id[1]].y};
+  if(id[0]==="M")return{x:SHROOMS[+id[1]].x,y:SHROOMS[+id[1]].y};
+  return{x:SOCKETS[+id[1]].x,y:SOCKETS[+id[1]].y};
+};
+
+/* ---------- svg ---------- */
+const NS="http://www.w3.org/2000/svg";
+function S(tag,attrs,parent){const el=document.createElementNS(NS,tag);
+  for(const k in attrs)el.setAttribute(k,attrs[k]);if(parent)parent.appendChild(el);return el;}
+const stage=document.getElementById("stage");
+S("rect",{x:0,y:0,width:800,height:430,fill:"#17132a"},stage);
+for(let i=0;i<46;i++)S("circle",{cx:Math.random()*800,cy:Math.random()*430,r:Math.random()*1.2+.3,fill:"#cabffa",opacity:Math.random()*.4+.1},stage);
+// ground
+S("path",{d:"M0,395 Q200,375 400,392 T800,388 L800,430 L0,430 Z",fill:"#211b3d"},stage);
+
+const wireLayer=S("g",{},stage);
+const nodeLayer=S("g",{},stage);
+const pulseLayer=S("g",{},stage);
+const fxLayer=S("g",{},stage);
+
+// totem
+const totemG=S("g",{},stage);
+totemG.innerHTML=`
+ <rect x="52" y="86" width="58" height="290" rx="14" fill="#3d3266" stroke="#5a4b91" stroke-width="3"/>
+ <circle cx="81" cy="120" r="11" fill="${RED}"/><circle cx="81" cy="213" r="11" fill="${RED}"/><circle cx="81" cy="306" r="11" fill="${RED}"/>
+ <g id="spouts">${SPOUTS.map((p,i)=>`<circle cx="${p.x}" cy="${p.y}" r="7" fill="#8f7fd8" stroke="#c9bcff" stroke-width="2" data-port="S${i}" style="cursor:crosshair"/>`).join("")}</g>
+ <rect x="62" y="340" width="38" height="14" rx="4" fill="#2a224d"/>
+ <text x="81" y="72" text-anchor="middle" font-size="12" fill="#b3a5ec">chant-totem</text>`;
+const chestPips=totemG.querySelector("#chest")||null;
+// beat pips
+const pipGroup=S("g",{},stage);
+function renderPips(upTo){
+  pipGroup.innerHTML="";
+  SEQ.forEach((c,i)=>{
+    S("circle",{cx:36+i*17,cy:402,r:i<upTo?7:5,
+      fill:(i<upTo?(c==="R"?RED:BLUE):"#3a3260"),
+      stroke:"#5a4b91","stroke-width":1.4},pipGroup);
+  });
+  S("text",{x:30,y:380,"font-size":10,fill:"#9a92c2"},pipGroup).textContent="song:";
+}
+renderPips(0);
+// door
+const doorG=S("g",{},stage);
+doorG.innerHTML=`
+ <rect x="718" y="96" width="66" height="250" rx="10" fill="#37305e" stroke="#564993" stroke-width="3"/>
+ ${EXPECT.map((c,i)=>`<g data-sock="${i}">
+    <circle cx="${SOCKETS[i].x}" cy="${SOCKETS[i].y}" r="17" fill="#241f47" stroke="#564993" stroke-width="2.5"/>
+    <circle cx="${SOCKETS[i].x}" cy="${SOCKETS[i].y}" r="8" fill="${c==="R"?RED:BLUE}" opacity=".85"/>
+    <circle class="port" cx="${SOCKETS[i].x-19}" cy="${SOCKETS[i].y}" r="6" fill="#8f7fd8" stroke="#c9bcff" stroke-width="2" data-in="D${i}" style="cursor:crosshair"/>
+    <text class="chip" x="${SOCKETS[i].x}" y="${SOCKETS[i].y+34}" text-anchor="middle" font-size="10" fill="#7d74ad"></text>
+  </g>`).join("")}
+ <text x="751" y="86" text-anchor="middle" font-size="12" fill="#b3a5ec">great door</text>
+ <text x="751" y="370" text-anchor="middle" font-size="10" fill="#7d74ad" font-style="italic">it dreams in blue·blue·red</text>`;
+// mushrooms
+const shroomEls=[];
+SHROOMS.forEach((m,i)=>{
+  const g=S("g",{transform:`translate(${m.x},${m.y})`,class:"shroom"},nodeLayer);
+  g.dataset.node="M"+i;
+  shroomEls.push(g);
+});
+function renderShrooms(){
+  SHROOMS.forEach((m,i)=>{
+    const c=CAPS[m.cap];
+    const g=shroomEls[i];
+    g.innerHTML=`
+      <path d="M -4,44 q 1,-22 -2,-30" stroke="#5a4b91" stroke-width="5" fill="none" stroke-linecap="round"/>
+      <ellipse cx="0" cy="0" rx="26" ry="15" fill="${m.cap==="PRISM"?"#c9a2f5":m.cap==="SNAIL"?"#c8b08a":"#79c99b"}"
+        stroke="#241f47" stroke-width="2.5"/>
+      <text x="0" y="5" text-anchor="middle" font-size="15" font-weight="bold" fill="#241f47">${c.glyph}</text>
+      <text x="0" y="60" text-anchor="middle" font-size="10" fill="#8f84c4">${c.label}</text>
+      <circle class="port" cx="27" cy="-2" r="6" fill="#8f7fd8" stroke="#c9bcff" stroke-width="2" data-port="M${i}" style="cursor:crosshair"/>
+      <circle cx="-27" cy="-2" r="4.5" fill="#3a3260" stroke="#6a5fae" stroke-width="1.5" data-in="M${i}" style="cursor:crosshair"/>`;
+    g.style.cursor=grafts>0&&!running?"pointer":"default";
+    g.onclick=()=>graft(i);
+  });
+}
+// tilo beside the door with spore pouch
+function tiloSVG(x,y,scale,mood){
+  const py=mood==="sad"?1:mood==="cheer"?-2:-1;
+  const mouth = mood==="cheer" ? `<path d="M -4,-2 Q 0,4 4,-2 Z" fill="#123326"/>`
+    : mood==="sad" ? `<path d="M -3,1 Q 0,-2 3,1" fill="none" stroke="#123326" stroke-width="1.6" stroke-linecap="round"/>`
+    : `<path d="M -3,-1 Q 0,2 3,-1" fill="none" stroke="#123326" stroke-width="1.6" stroke-linecap="round"/>`;
+  return `<g transform="translate(${x},${y}) scale(${scale})">
+    <ellipse cx="-7" cy="0" rx="6" ry="3.4" fill="#3f9a70"/><ellipse cx="7" cy="0" rx="6" ry="3.4" fill="#3f9a70"/>
+    <ellipse cx="-17" cy="-10" rx="4.4" ry="6.4" fill="#69d19c" stroke="#1e5b41" stroke-width="1.6" transform="rotate(18 -17 -10)"/>
+    <ellipse cx="17" cy="-10" rx="4.4" ry="6.4" fill="#69d19c" stroke="#1e5b41" stroke-width="1.6" transform="rotate(-18 17 -10)"/>
+    <ellipse cx="0" cy="-12" rx="16" ry="15" fill="#69d19c" stroke="#1e5b41" stroke-width="2"/>
+    <ellipse cx="0" cy="-7" rx="9.5" ry="7.5" fill="#8fe7bc"/>
+    <path d="M 0,-26 C 2,-34 8,-37 12,-38" fill="none" stroke="#1e5b41" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="13" cy="-39" r="4" fill="#ffc857" stroke="#1e5b41" stroke-width="1.5"/>
+    <ellipse cx="-6" cy="-15" rx="5" ry="6.2" fill="#fff"/><ellipse cx="6" cy="-15" rx="5" ry="6.2" fill="#fff"/>
+    <circle cx="-5" cy="${-15+py}" r="2.6" fill="#132b20"/><circle cx="7" cy="${-15+py}" r="2.6" fill="#132b20"/>
+    ${mouth}</g>`;
+}
+const tiloHolder=S("g",{},stage);
+tiloHolder.innerHTML=tiloSVG(648,408,.9,"happy");
+
+/* ---------- wiring ---------- */
+function wirePath(a,b){
+  const A=NODEPOS(a),B=NODEPOS(b);
+  const mx=(A.x+B.x)/2;
+  return `M ${A.x},${A.y} C ${mx},${A.y} ${mx},${B.y} ${B.x},${B.y}`;
+}
+let dragFrom=null,dragPath=null;
+function renderWires(){
+  wireLayer.innerHTML="";
+  for(const from in wires){
+    S("path",{d:wirePath(from,wires[from]),fill:"none",stroke:"#6a5fae","stroke-width":3,"stroke-linecap":"round",opacity:.9},wireLayer);
+  }
+  if(dragFrom&&dragPath)S("path",{d:dragPath.d,fill:"none",stroke:"#ffd166","stroke-width":2.5,"stroke-dasharray":"6 6",opacity:.9},wireLayer);
+}
+stage.addEventListener("mousedown",ev=>{
+  if(running)return;
+  const portEl=ev.target.closest("[data-port]");
+  if(portEl){ dragFrom=portEl.dataset.port; ev.preventDefault(); }
+});
+stage.addEventListener("mousemove",ev=>{
+  if(!dragFrom)return;
+  const r=stage.getBoundingClientRect();
+  const x=ev.clientX-r.left,y=ev.clientY-r.top;
+  const A=NODEPOS(dragFrom);
+  dragPath={d:`M ${A.x},${A.y} C ${(A.x+x)/2},${A.y} ${(A.x+x)/2},${y} ${x},${y}`};
+  renderWires();
+});
+window.addEventListener("mouseup",ev=>{
+  if(!dragFrom)return;
+  if(running){dragFrom=null;dragPath=null;renderWires();return;}
+  const el=document.elementFromPoint(ev.clientX,ev.clientY);
+  const inEl=el&&el.closest("[data-in]");
+  if(inEl){
+    const to=inEl.dataset.in;
+    if(to!==dragFrom){ wires[dragFrom]=to; }
+  }
+  dragFrom=null;dragPath=null;
+  renderWires();
+});
+function graft(i){
+  if(running||grafts<=0)return;
+  const m=SHROOMS[i];
+  m.cap=CYCLE[(CYCLE.indexOf(m.cap)+1)%3];
+  grafts--;
+  renderShrooms();updateStatus();
+  // graft puff
+  const p=S("circle",{cx:m.x,cy:m.y,r:6,fill:"#ffd166"},fxLayer);
+  p.animate([{r:6,opacity:1},{r:30,opacity:0}],{duration:500});
+  tiloHolder.animate([{transform:"translateY(0)"},{transform:"translateY(-8px)"},{transform:"translateY(0)"}],{duration:360});
+}
+function updateStatus(){
+  const spores="✦".repeat(grafts)+"·".repeat(Math.max(0,3-Math.max(grafts,0)));
+  statusEl.textContent=`Tilo's spore pouch: ${"✦".repeat(grafts)} graft${grafts===1?"":"s"} left. The totem waits.`;
+}
+
+/* ---------- chant simulation ---------- */
+let running=false,pulses=[],beatIdx=0,beatTimer=0,filled=[false,false,false],received=[],ended=false,raf=null,lastT=0;
+const BEAT_SECONDS=2.3,SPEED=190; // px/s
+const statusEl=document.getElementById("status");
+
+function spawnBeat(){
+  SEQ.forEach((c,i)=>{}); // (sequence already drawn in pips)
+  const color=SEQ[beatIdx];
+  // totem mouth glow
+  const mouth=totemG.querySelectorAll("circle")[Math.min(beatIdx,2)];
+  if(mouth)mouth.setAttribute("fill",color==="R"?RED:BLUE);
+  SPOUTS.forEach((p,i)=>{
+    const id="S"+i;
+    S("circle",{cx:p.x,cy:p.y,r:9,fill:"none",stroke:color,"stroke-width":3},fxLayer)
+      .animate([{r:9,opacity:1},{r:22,opacity:0}],{duration:420});
+    if(wires[id]){
+      pulses.push({color,seg:{from:id,to:wires[id]},prog:0});
+    }else{
+      setTimeout(()=>{const q=S("circle",{cx:p.x+34,cy:p.y,r:3,fill:color},fxLayer);
+        q.animate([{opacity:.9},{opacity:0}],{duration:600});},300);
+    }
+  });
+  beatIdx++;
+}
+function segDuration(a,b){
+  const A=NODEPOS(a),B=NODEPOS(b);
+  return Math.max(.25,Math.hypot(A.x-B.x,A.y-B.y)/SPEED);
+}
+function pulseDot(p){
+  const A=NODEPOS(p.seg.from),B=NODEPOS(p.seg.to);
+  const t=p.prog;
+  return{x:A.x+(B.x-A.x)*t,y:A.y+(B.y-A.y)*t};
+}
+function arrive(p){
+  const dest=p.seg.to;
+  if(dest[0]==="M"){
+    const m=SHROOMS[+dest[1]];
+    const cap=CAPS[m.cap];
+    let color=p.color;
+    if(cap.swap)color=color==="R"?"B":"R";
+    if(wires[dest]){
+      pulses.push({color,seg:{from:dest,to:wires[dest]},prog:-cap.dwell}); // negative prog = dwell
+    }else{
+      const f=S("text",{x:NODEPOS(dest).x+14,y:NODEPOS(dest).y-14,"font-size":11,fill:"#8f84c4"},fxLayer);
+      f.textContent="fizz…";setTimeout(()=>f.remove(),800);
+    }
+  }else if(dest[0]==="D"){
+    const si=+dest[1];
+    if(filled[si]){
+      bounceOff(si,p.color);return;
+    }
+    const want=EXPECT[si];
+    if(want===p.color){
+      filled[si]=true;received[si]=p.color;
+      const sock=doorG.querySelectorAll("[data-sock]")[si];
+      sock.querySelector(".chip").textContent="✓";
+      sock.querySelector(".chip").setAttribute("fill","#9fe8b0");
+      S("circle",{cx:SOCKETS[si].x,cy:SOCKETS[si].y,r:17,fill:"none",stroke:"#9fe8b0","stroke-width":3},fxLayer)
+        .animate([{r:17,opacity:1},{r:30,opacity:0}],{duration:600});
+      checkWin();
+    }else{
+      slam(si,want,p.color);
+    }
+  }
+}
+function bounceOff(si,color){
+  const s=SOCKETS[si];
+  const d=S("circle",{cx:s.x,cy:s.y,r:6,fill:color==="R"?RED:BLUE},fxLayer);
+  d.animate([{transform:"translate(0,0)",opacity:1},{transform:"translate(-46px,-26px)",opacity:0}],{duration:520});
+}
+function slam(si,want,got){
+  ended=true;stopLoop();
+  doorG.animate([{transform:"translateX(0)"},{transform:"translateX(-7px)"},{transform:"translateX(6px)"},{transform:"translateX(0)"}],{duration:420});
+  const sock=doorG.querySelectorAll("[data-sock]")[si];
+  sock.querySelector(".chip").textContent="✗";
+  sock.querySelector(".chip").setAttribute("fill","#ff8a97");
+  tiloHolder.innerHTML=tiloSVG(648,408,.9,"sad");
+  document.getElementById("bSub").textContent=
+    `Socket ${si+1} woke to ${got==="R"?"red":"blue"} — it carves ${want==="R"?"red":"blue"}. The door slams and sulks.`;
+  document.getElementById("banner").classList.add("show");
+  setTimeout(()=>document.getElementById("banner").classList.remove("show"),4800);
+  statusEl.textContent=`Slammed: socket ${si+1} wanted ${want==="R"?"RED":"BLUE"} but tasted ${got==="R"?"RED":"BLUE"}. Re-wire or re-graft.`;
+}
+function checkWin(){
+  if(filled.every(f=>f)&&!ended){
+    ended=true;stopLoop();
+    doorG.querySelector("rect").setAttribute("fill","#4d4382");
+    for(let i=0;i<26;i++){const s=S("circle",{cx:751,cy:220,r:2.3,fill:i%2?"#ffd166":"#c9bcff"},fxLayer);
+      s.animate([{transform:"translate(0,0)",opacity:1},{transform:`translate(${Math.random()*160-80}px,${Math.random()*200-110}px)`,opacity:0}],{duration:1300,easing:"ease-out"});}
+    tiloHolder.innerHTML=tiloSVG(648,408,.9,"cheer");
+    document.getElementById("banner").classList.add("show");
+    setTimeout(()=>document.getElementById("banner").classList.remove("show"),4500);
+    statusEl.textContent="Open! The password arrived in shape.";
+  }
+}
+function stopLoop(){cancelAnimationFrame(raf);running=false;
+  document.getElementById("runBtn").textContent="chantsong ▶";}
+function loop(ts){
+  if(!running)return;
+  if(!lastT)lastT=ts;
+  const dt=Math.min(.06,(ts-lastT)/1000);lastT=ts;
+  beatTimer+=dt;
+  if(beatIdx<SEQ.length&&beatTimer>=BEAT_SECONDS){beatTimer-=BEAT_SECONDS;spawnBeat();renderPips(beatIdx);}
+  // advance pulses
+  for(let i=pulses.length-1;i>=0;i--){
+    const p=pulses[i];
+    if(p.prog<0){p.prog+=dt;continue;} // dwelling in a cap
+    p.prog+=dt/segDuration(p.seg.from,p.seg.to);
+    if(p.prog>=1){
+      pulses.splice(i,1);
+      arrive(p);
+    }
+  }
+  // draw pulses
+  pulseLayer.querySelectorAll(".pdot").forEach(d=>d.remove());
+  pulses.forEach(p=>{
+    if(p.prog<0)return;
+    const pos=pulseDot(p);
+    S("circle",{cx:pos.x,cy:pos.y,r:7,fill:p.color==="R"?RED:BLUE,class:"pdot",
+      style:"filter:drop-shadow(0 0 6px "+(p.color==="R"?RED:BLUE)+")"},pulseLayer);
+  });
+  raf=requestAnimationFrame(loop);
+}
+function startRun(){
+  if(running)return;
+  running=true;ended=false;pulses=[];filled=[false,false,false];received=[];beatIdx=0;beatTimer=BEAT_SECONDS-.6;lastT=0;
+  pulseLayer.innerHTML="";fxLayer.innerHTML="";
+  doorG.querySelectorAll(".chip").forEach(ch=>{ch.textContent="";ch.removeAttribute("fill");});
+  renderPips(0);
+  document.getElementById("runBtn").textContent="❚❚ chanting…";
+  raf=requestAnimationFrame(loop);
+}
+function recall(){
+  stopLoop();
+  running=false;pulses=[];filled=[false,false,false];beatIdx=0;lastT=0;
+  pulseLayer.innerHTML="";fxLayer.innerHTML="";renderPips(0);
+  doorG.querySelectorAll(".chip").forEach(ch=>{ch.textContent="";ch.removeAttribute("fill");});
+  tiloHolder.innerHTML=tiloSVG(648,408,.9,"happy");
+  updateStatus();
+}
+function resetWorkshop(){
+  recall();
+  SHROOMS.forEach(m=>m.cap="RELAY");
+  wires={"S0":"M0","M0":"D0","S1":"M1","M1":"D1","S2":"M2","M2":"D2"};
+  grafts=2;
+  renderShrooms();renderWires();updateStatus();
+}
+document.getElementById("runBtn").onclick=startRun;
+document.getElementById("recallBtn").onclick=recall;
+document.getElementById("resetBtn").onclick=resetWorkshop;
+resetWorkshop();
+updateStatus();
+</script>
+</body>
+</html>
