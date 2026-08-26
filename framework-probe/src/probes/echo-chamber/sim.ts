@@ -7,9 +7,9 @@ export function initialEchoState(): EchoState {
 
 /**
  * One lane's per-tick rule: MOVE advances (clamped at the plate), PRESS only succeeds while
- * standing exactly on the plate. Intentionally duplicated for the echo/live lanes below rather
- * than promoted to a shared `src/adapters/sequence` module — see REPORT.md "Directive verdict"
- * for why a single two-call-site helper did not clear the extraction bar.
+ * standing exactly on the plate. Kept local rather than promoted to a shared module: it has
+ * exactly two adjacent call sites and no reuse outside this file, so extraction would only
+ * add indirection.
  */
 function stepLane(instr: Instr | undefined, pos: number, plate: number): { pos: number; pressed: boolean } {
   const nextPos = instr === 'MOVE' ? Math.min(plate, pos + 1) : pos;
@@ -52,5 +52,5 @@ export function createEchoRun(config: EchoConfig): RunDefinition<EchoState, Echo
 }
 
 /** Same-tick aggregate: both lanes are ordinary current-tick fields, so "did both press right
- * now" needs no new primitive — it is just a query over State(t). */
-export const bothPressedThisTick = (state: EchoState): boolean => state.echoPressed && state.livePressed;
+ * now" needs no new primitive — it is just a read over State(t). */
+export const bothPressedThisTick = (state: Readonly<EchoState>): boolean => state.echoPressed && state.livePressed;

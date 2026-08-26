@@ -1,4 +1,5 @@
 import type { Instr } from './types';
+import { createButton } from '../../ui/shell';
 
 export interface EchoUiHandlers {
   onRun(): void;
@@ -7,15 +8,8 @@ export interface EchoUiHandlers {
 
 const OPS: readonly Instr[] = ['MOVE', 'WAIT', 'PRESS'];
 
-function button(label: string, onClick: () => void): HTMLButtonElement {
-  const btn = document.createElement('button');
-  btn.className = 'btn';
-  btn.textContent = label;
-  btn.addEventListener('click', onClick);
-  return btn;
-}
-
-function buildEditor(title: string, program: Instr[], onChange: () => void): HTMLElement {
+/** Edits the program array in place; the next Run snapshots whatever is authored by then. */
+function buildEditor(title: string, program: Instr[]): HTMLElement {
   const box = document.createElement('div');
   box.className = 'editor';
   const heading = document.createElement('h3');
@@ -40,19 +34,17 @@ function buildEditor(title: string, program: Instr[], onChange: () => void): HTM
       }
       select.addEventListener('change', () => {
         program[idx] = select.value as Instr;
-        onChange();
       });
-      const del = button('\u2715', () => {
+      const del = createButton('\u2715', () => {
         program.splice(idx, 1);
         renderList();
-        onChange();
       });
       row.append(label, select, del);
       list.appendChild(row);
     });
   }
   renderList();
-  box.appendChild(button('+ step', () => { program.push('WAIT'); renderList(); onChange(); }));
+  box.appendChild(createButton('+ step', () => { program.push('WAIT'); renderList(); }));
   return box;
 }
 
@@ -65,12 +57,12 @@ export function mountEchoUi(
   root.innerHTML = '';
   const editors = document.createElement('div');
   editors.className = 'editors';
-  editors.append(
-    buildEditor('Echo Program', echoProgram, () => undefined),
-    buildEditor('Live Program', liveProgram, () => undefined),
-  );
+  editors.append(buildEditor('Echo Program', echoProgram), buildEditor('Live Program', liveProgram));
   const controls = document.createElement('div');
   controls.className = 'controls';
-  controls.append(button('\u25B6 Run Both Tracks', handlers.onRun), button('\u21BA Reset', handlers.onReset));
+  controls.append(
+    createButton('\u25B6 Run Both Tracks', handlers.onRun),
+    createButton('\u21BA Reset', handlers.onReset),
+  );
   root.append(editors, controls);
 }

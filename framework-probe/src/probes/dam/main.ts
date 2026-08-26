@@ -1,73 +1,63 @@
 import { createPixiHost } from '../../rendering/pixi-host';
 import { createTickDriver } from '../../rendering/tick-driver';
-import { createDamRenderer, type DamView } from './render';
+import { createDamRenderer } from './render';
 import { mountDamUi } from './ui';
 import { createDamRun } from './sim';
-import type { DamConfig, DamState, ThresholdRule } from './types';
-import { advance } from '../../core/kernel';
-import { view as projectView } from '../../services/presentation';
+import { createHistory } from '../../services/history';
+import { mountProbeShell } from '../../ui/shell';
+import type { ThresholdRule } from './types';
 
 async function main(): Promise<void> {
-  const stageEl = document.querySelector<HTMLDivElement>('#stage')!;
-  const uiEl = document.querySelector<HTMLDivElement>('#ui')!;
-  const logEl = document.querySelector<HTMLDivElement>('#log')!;
-  const tickEl = document.querySelector<HTMLSpanElement>('#tick')!;
+  const shell = mountProbeShell();
 
   // The intuitive-but-wrong default from the source demo: stingy when low.
   const rules: ThresholdRule[] = [{ below: 50, opening: 30 }];
 
-  const app = await createPixiHost(stageEl, { width: 300, height: 190, background: '#eef2f6' });
+  const app = await createPixiHost(shell.stage, { width: 300, height: 190, background: '#eef2f6' });
   const renderer = createDamRenderer(app);
 
-  function configNow(): DamConfig {
+  function configNow() {
     return { rules, initialLevel: 48, initialOpening: 0 };
   }
 
-  let activeRun = createDamRun(configNow());
-  let state: DamState = activeRun.initialState;
+  // The history is the playback state; every tick shown is a cached entry of one timeline.
+  let history = createHistory(createDamRun(configNow()));
 
   function render(tick: number): void {
-    const projected: DamView = projectView(state, tick, {
-      level: (current: DamState) => current.level,
-      opening: (current: DamState) => current.opening,
-      outflow: (current: DamState) => current.outflow,
-      streak: (current: DamState) => current.streak,
-      gate: (current: DamState) => current.gate,
-      burst: (current: DamState) => current.burst,
+    const s = history.stateAt(tick);
+    renderer.render({
+      level: s.level,
+      opening: s.opening,
+      outflow: s.outflow,
+      streak: s.streak,
+      gate: s.gate,
+      burst: s.burst,
     });
-    renderer.render(projected);
   }
 
-  function logLine(text: string): void {
-    logEl.textContent = `${text}\n${logEl.textContent ?? ''}`;
-  }
-
-  function onTick(tick: number): void {
-    const wasGate = state.gate;
-    state = advance(state, tick, activeRun.inputSource(tick), activeRun.step);
-    tickEl.textContent = String(tick);
+  const driver = createTickDriver(app.ticker, 90, (tick) => {
+    const prev = history.stateAt(tick - 1);
+    const next = history.stateAt(tick);
+    shell.showTick(tick);
     render(tick);
-    if (state.gate && !wasGate) logLine(`t${tick}: the wheel hums steady — the gate grinds OPEN.`);
-    if (state.burst) {
-      logLine(`t${tick}: the dam BURSTS — the valley floods! FAIL`);
+    if (next.gate && !prev.gate) shell.logLine(`t${tick}: the wheel hums steady — the gate grinds OPEN.`);
+    if (next.burst) {
+      shell.logLine(`t${tick}: the dam BURSTS — the valley floods! FAIL`);
       driver.stop();
     }
-    if (tick % 10 === 0) logLine(`t${tick}: level ${state.level.toFixed(1)}, outflow ${state.outflow.toFixed(2)}.`);
+    if (tick % 10 === 0) shell.logLine(`t${tick}: level ${next.level.toFixed(1)}, outflow ${next.outflow.toFixed(2)}.`);
     if (tick >= 300) driver.stop();
-  }
-
-  const driver = createTickDriver(app.ticker, 90, onTick);
+  });
 
   function reset(): void {
     driver.reset();
-    activeRun = createDamRun(configNow());
-    state = activeRun.initialState;
-    tickEl.textContent = '0';
+    history = createHistory(createDamRun(configNow()));
+    shell.showTick(0);
     render(0);
-    logEl.textContent = 'The reservoir is at 48. Somewhere downstream a wheel waits for steady water…';
+    shell.resetLog('The reservoir is at 48. Somewhere downstream a wheel waits for steady water…');
   }
 
-  mountDamUi(uiEl, rules, {
+  mountDamUi(shell.ui, rules, {
     onRun() {
       reset();
       driver.start();

@@ -10,9 +10,7 @@ export interface TickDriver {
 /**
  * Converts PixiJS's real-time ticker into discrete simulation ticks at a fixed rate. This is
  * the ONLY place real time (`deltaMS`) is read anywhere in the four probes — it exists purely
- * to pace playback, never to compute gameplay values. `src/core` never sees it.
- *
- * Proven necessary by all four probes (not just one), unlike `src/adapters/*` — see REPORT.md.
+ * to pace playback, never to compute gameplay values, so `src/core` never sees wall-clock time.
  */
 export function createTickDriver(ticker: Ticker, msPerTick: number, onTick: (tick: number) => void): TickDriver {
   let elapsedMs = 0;
