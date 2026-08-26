@@ -1,44 +1,77 @@
 import { describe, expect, it } from 'vitest';
+import { createHistory } from '../../src/services/history';
 import { computeLitMap } from '../../src/probes/mimic-moss/topology';
-import { createMossStep, initialMossState } from '../../src/probes/mimic-moss/sim';
-import { replay } from '../../src/core/kernel';
+import { createMossRun, createMossStep, initialMossState } from '../../src/probes/mimic-moss/sim';
 import type { MossConfig, Plant } from '../../src/probes/mimic-moss/types';
 
 const baseConfig = {
   bounds: { width: 100, height: 100 },
-  seed: 1,
-  sproutEveryTicks: 1_000_000, // effectively disabled unless a test overrides it
-  sproutChance: 0,
-  matureDistance: 3,
   relaxationSteps: 20,
 };
 
-describe('Mimic Moss — topology (computeLitMap)', () => {
-  it('path length becomes delay: distance grows by 1 per hop from the source', () => {
+function historyFor(config: MossConfig) {
+  return createHistory(createMossRun(config));
+}
+
+describe('Mimic Moss — static topology and signal delay', () => {
+  it('transforms color at dye nodes and records one tick of delay per hop', () => {
     const plants: Plant[] = [
       { x: 1, y: 0, type: 'moss' },
       { x: 2, y: 0, type: 'dye' },
       { x: 3, y: 0, type: 'moss' },
     ];
     const lit = computeLitMap(plants, { x: 0, y: 0, color: 'R' }, 10);
+
     expect(lit.get('1,0')).toEqual({ color: 'R', dist: 1 });
-    // a dye plant inverts whatever color it receives
     expect(lit.get('2,0')).toEqual({ color: 'B', dist: 2 });
-    // downstream of the dye, plain moss just passes the (now inverted) color through
     expect(lit.get('3,0')).toEqual({ color: 'B', dist: 3 });
+  });
+
+  it('keeps a configured path static while its signal becomes visible only after its distance', () => {
+    const config: MossConfig = {
+      ...baseConfig,
+      plants: [
+        { x: 1, y: 0, type: 'moss' },
+        { x: 2, y: 0, type: 'dye' },
+        { x: 3, y: 0, type: 'moss' },
+      ],
+      source: { x: 0, y: 0, color: 'R' },
+      flower: { x: 4, y: 0 },
+      fern: { x: 50, y: 50 },
+    };
+    const history = historyFor(config);
+
+    expect(history.stateAt(1).firstColor).toBeNull();
+    expect(history.stateAt(2).firstColor).toBeNull();
+    expect(history.stateAt(3).firstColor).toBe('B');
+    expect(history.stateAt(20).firstColor).toBe('B');
+  });
+
+  it('does not let authoring add a plant to an existing run history', () => {
+    const plants: Plant[] = [{ x: 1, y: 0, type: 'moss' }];
+    const config: MossConfig = {
+      ...baseConfig,
+      plants,
+      source: { x: 0, y: 0, color: 'R' },
+      flower: { x: 3, y: 0 },
+      fern: { x: 50, y: 50 },
+    };
+    const history = historyFor(config);
+
+    plants.push({ x: 2, y: 0, type: 'dye' });
+
+    expect(history.stateAt(2).firstColor).toBeNull();
   });
 });
 
 describe('Mimic Moss — flower requires RED first, then BLUE, in that order', () => {
-  // Two branches from one source: a short plain-moss branch (arrives RED, early) and a longer
-  // dyed branch (arrives BLUE, later) — both terminate adjacent to the flower.
   const redThenBluePlants: Plant[] = [
     { x: 1, y: 0, type: 'moss' },
-    { x: 2, y: 0, type: 'moss' }, // flower neighbor, RED, dist 2
+    { x: 2, y: 0, type: 'moss' },
     { x: 0, y: -1, type: 'moss' },
     { x: 1, y: -1, type: 'moss' },
     { x: 2, y: -1, type: 'dye' },
-    { x: 3, y: -1, type: 'moss' }, // flower neighbor, BLUE, dist 4
+    { x: 3, y: -1, type: 'moss' },
   ];
   const config: MossConfig = {
     ...baseConfig,
@@ -49,34 +82,31 @@ describe('Mimic Moss — flower requires RED first, then BLUE, in that order', (
   };
 
   it('blooms once red has arrived before blue, and the bloom latches monotonically', () => {
-    const step = createMossStep(config);
-    const intentAt = () => ({});
+    const history = historyFor(config);
     let firstBloomTick = -1;
     for (let t = 1; t <= 30; t++) {
-      if (replay(initialMossState(config), step, intentAt, t).bloomed) {
+      if (history.stateAt(t).bloomed) {
         firstBloomTick = t;
         break;
       }
     }
     expect(firstBloomTick).toBeGreaterThan(0);
     for (let t = firstBloomTick; t <= firstBloomTick + 10; t++) {
-      expect(replay(initialMossState(config), step, intentAt, t).bloomed).toBe(true);
+      expect(history.stateAt(t).bloomed).toBe(true);
     }
   });
 
-  it('never blooms if blue arrives before red (order-sensitive, not just "both colors seen")', () => {
+  it('never blooms if blue arrives before red', () => {
     const blueThenRedPlants: Plant[] = [
       { x: 1, y: 0, type: 'moss' },
-      { x: 2, y: 0, type: 'dye' }, // flower neighbor, BLUE, dist 2 (arrives first)
+      { x: 2, y: 0, type: 'dye' },
       { x: 0, y: -1, type: 'moss' },
       { x: 1, y: -1, type: 'moss' },
       { x: 2, y: -1, type: 'moss' },
-      { x: 3, y: -1, type: 'moss' }, // flower neighbor, RED, dist 4 (arrives second)
+      { x: 3, y: -1, type: 'moss' },
     ];
-    const swapped: MossConfig = { ...config, plants: blueThenRedPlants };
-    const step = createMossStep(swapped);
-    const final = replay(initialMossState(swapped), step, () => ({}), 30);
-    expect(final.bloomed).toBe(false);
+    const history = historyFor({ ...config, plants: blueThenRedPlants });
+    expect(history.stateAt(30).bloomed).toBe(false);
   });
 });
 
@@ -86,38 +116,35 @@ describe('Mimic Moss — the fern is a hazard that resets in-progress color memo
       ...baseConfig,
       bounds: { width: 4, height: 4 },
       plants: [
-        { x: 1, y: 0, type: 'moss' }, // flower neighbor, lit on tick 1
-        { x: 0, y: 1, type: 'moss' }, // fern neighbor, lit on tick 1
+        { x: 1, y: 0, type: 'moss' },
+        { x: 0, y: 1, type: 'moss' },
       ],
       source: { x: 0, y: 0, color: 'R' },
       flower: { x: 2, y: 0 },
       fern: { x: 0, y: 2 },
     };
-    const step = createMossStep(config);
-
-    const atTickOne = step(initialMossState(config), 1, {});
+    const atTickOne = createMossStep(config)(initialMossState(), 1, {});
 
     expect(atTickOne.spores).toBeGreaterThan(0);
     expect(atTickOne.firstColor).toBeNull();
     expect(atTickOne.secondColor).toBeNull();
   });
 
-  it('wipes accumulated first/second color once lit, even after bloom (latch survives, memory does not)', () => {
+  it('wipes accumulated color memory once lit, even after bloom', () => {
     const plants: Plant[] = [
       { x: 1, y: 0, type: 'moss' },
-      { x: 2, y: 0, type: 'moss' }, // flower neighbor, RED, dist 2
+      { x: 2, y: 0, type: 'moss' },
       { x: 0, y: -1, type: 'moss' },
       { x: 1, y: -1, type: 'moss' },
       { x: 2, y: -1, type: 'dye' },
-      { x: 3, y: -1, type: 'moss' }, // flower neighbor, BLUE, dist 4 -> bloom by tick 4
-      // A long straight feeder that only reaches the fern's doorstep at distance 8.
+      { x: 3, y: -1, type: 'moss' },
       { x: 0, y: -2, type: 'moss' },
       { x: 0, y: -3, type: 'moss' },
       { x: 0, y: -4, type: 'moss' },
       { x: 0, y: -5, type: 'moss' },
       { x: 0, y: -6, type: 'moss' },
       { x: 0, y: -7, type: 'moss' },
-      { x: 0, y: -8, type: 'moss' }, // fern neighbor, dist 8
+      { x: 0, y: -8, type: 'moss' },
     ];
     const config: MossConfig = {
       ...baseConfig,
@@ -126,108 +153,27 @@ describe('Mimic Moss — the fern is a hazard that resets in-progress color memo
       flower: { x: 3, y: 0 },
       fern: { x: 0, y: -9 },
     };
-    const step = createMossStep(config);
-    const intentAt = () => ({});
+    const history = historyFor(config);
 
-    const beforeFernLights = replay(initialMossState(config), step, intentAt, 6);
-    expect(beforeFernLights.bloomed).toBe(true);
-    expect(beforeFernLights.spores).toBe(0);
-
-    const afterFernLights = replay(initialMossState(config), step, intentAt, 8);
-    expect(afterFernLights.spores).toBeGreaterThan(0);
-    expect(afterFernLights.firstColor).toBeNull(); // memory wiped...
-    expect(afterFernLights.bloomed).toBe(true); // ...but the latch does not un-bloom
+    expect(history.stateAt(6).bloomed).toBe(true);
+    expect(history.stateAt(6).spores).toBe(0);
+    expect(history.stateAt(8).spores).toBeGreaterThan(0);
+    expect(history.stateAt(8).firstColor).toBeNull();
+    expect(history.stateAt(8).bloomed).toBe(true);
   });
 });
 
-describe('Mimic Moss — spore decay', () => {
+describe('Mimic Moss — spore decay and explorer movement', () => {
   it('spores drain by exactly one per tick once the fern is dark again', () => {
     const config: MossConfig = {
       ...baseConfig,
       plants: [],
       source: { x: 0, y: 0, color: 'R' },
       flower: { x: 60, y: 60 },
-      fern: { x: 50, y: 50 }, // isolated: never adjacent to a lit cell
+      fern: { x: 50, y: 50 },
     };
-    const step = createMossStep(config);
-    const prev = { ...initialMossState(config), spores: 3 };
-    const next = step(prev, 5, {});
+    const next = createMossStep(config)({ ...initialMossState(), spores: 3 }, 5, {});
     expect(next.spores).toBe(2);
-  });
-});
-
-describe('Mimic Moss — sprouting and explorer movement', () => {
-  it('replays sprouting identically when the seed is unchanged', () => {
-    const config: MossConfig = {
-      ...baseConfig,
-      bounds: { width: 8, height: 8 },
-      plants: [{ x: 1, y: 0, type: 'moss' }],
-      source: { x: 0, y: 0, color: 'R' },
-      flower: { x: 7, y: 7 },
-      fern: { x: 7, y: 0 },
-      seed: 12345,
-      sproutEveryTicks: 1,
-      sproutChance: 1,
-      matureDistance: 1,
-      relaxationSteps: 32,
-    };
-    const step = createMossStep(config);
-    const initial = initialMossState(config);
-
-    const firstReplay = replay(initial, step, () => ({}), 12);
-    const secondReplay = replay(initial, step, () => ({}), 12);
-
-    expect(firstReplay.plants.length).toBeGreaterThan(config.plants.length);
-    expect(secondReplay).toEqual(firstReplay);
-  });
-
-  it('adds a plant when a mature sprout is due and its chance allows it', () => {
-    const config: MossConfig = {
-      ...baseConfig,
-      bounds: { width: 4, height: 4 },
-      plants: [{ x: 1, y: 0, type: 'moss' }],
-      source: { x: 0, y: 0, color: 'R' },
-      flower: { x: 3, y: 3 },
-      fern: { x: 3, y: 0 },
-      sproutEveryTicks: 2,
-      sproutChance: 1,
-      matureDistance: 1,
-      relaxationSteps: 16,
-    };
-    const step = createMossStep(config);
-    const initial = initialMossState(config);
-
-    const beforeDue = step(initial, 1, {});
-    const atDueTick = step(beforeDue, 2, {});
-
-    expect(beforeDue.plants).toHaveLength(config.plants.length);
-    expect(atDueTick.plants).toHaveLength(config.plants.length + 1);
-  });
-
-  it('never sprouts into a cell orthogonally adjacent to the fern', () => {
-    const config: MossConfig = {
-      ...baseConfig,
-      bounds: { width: 4, height: 4 },
-      plants: [{ x: 1, y: 1, type: 'moss' }],
-      source: { x: 0, y: 1, color: 'R' },
-      flower: { x: 3, y: 3 },
-      fern: { x: 2, y: 2 },
-      seed: 12345,
-      sproutEveryTicks: 1,
-      sproutChance: 1,
-      matureDistance: 1,
-    };
-    const step = createMossStep(config);
-    const initial = initialMossState(config);
-    const initialKeys = new Set(config.plants.map((plant) => `${plant.x},${plant.y}`));
-    const atTickOne = step(initial, 1, {});
-    const newlyAdded = atTickOne.plants.filter((plant) => !initialKeys.has(`${plant.x},${plant.y}`));
-
-    expect(newlyAdded.length).toBeGreaterThan(0);
-    for (const plant of newlyAdded) {
-      const distance = Math.abs(plant.x - config.fern.x) + Math.abs(plant.y - config.fern.y);
-      expect(distance).toBeGreaterThan(1);
-    }
   });
 
   it('keeps the explorer inside all four boundaries', () => {
@@ -236,13 +182,11 @@ describe('Mimic Moss — sprouting and explorer movement', () => {
       bounds: { width: 2, height: 2 },
       plants: [],
       source: { x: 0, y: 0, color: 'R' },
-      // Keep reserved cells out of this focused movement test so they cannot mask
-      // the lower/right boundary checks with flower or fern behavior.
       flower: { x: 10, y: 10 },
       fern: { x: 10, y: 10 },
     };
     const step = createMossStep(config);
-    let state = initialMossState(config);
+    let state = initialMossState();
 
     state = step(state, 1, { move: 'L' });
     state = step(state, 2, { move: 'U' });
@@ -264,7 +208,7 @@ describe('Mimic Moss — sprouting and explorer movement', () => {
       fern: { x: 2, y: 0 },
     };
     const step = createMossStep(config);
-    const initial = initialMossState(config);
+    const initial = initialMossState();
 
     const blocked = step(initial, 1, { move: 'R' });
     const entered = step({ ...initial, bloomed: true }, 1, { move: 'R' });

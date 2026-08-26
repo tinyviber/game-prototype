@@ -1,38 +1,69 @@
 import { describe, expect, it } from 'vitest';
-import { advance, replay } from '../../src/core/kernel';
-import type { StepFn } from '../../src/core/types';
-import { view } from '../../src/core/query';
+import { advance } from '../../src/core/kernel';
+import type { RunDefinition, StepFn } from '../../src/core/types';
+import { createHistory, replay } from '../../src/services/history';
+import { view } from '../../src/services/presentation';
 
-// A trivial counter kernel is enough to prove the generic contract: replay is a pure fold,
-// independent of how many times or in what order it is invoked.
 const addStep: StepFn<number, number> = (prev, _tick, intent) => prev + intent;
 
 describe('core/kernel', () => {
   it('advance applies exactly one step', () => {
-    expect(advance(addStep, 10, 1, 5)).toBe(15);
+    expect(advance(10, 1, 5, addStep)).toBe(15);
   });
 
-  it('replay folds from tick 1 through targetTick', () => {
-    const intents = [1, 2, 3, 4, 5];
-    const intentAt = (tick: number) => intents[tick - 1] ?? 0;
-    expect(replay(0, addStep, intentAt, 3)).toBe(1 + 2 + 3);
-    expect(replay(0, addStep, intentAt, 5)).toBe(1 + 2 + 3 + 4 + 5);
-  });
-
-  it('replay is deterministic across repeated calls (no hidden mutable state)', () => {
-    const intentAt = (tick: number) => tick * 2;
-    const a = replay(0, addStep, intentAt, 10);
-    const b = replay(0, addStep, intentAt, 10);
-    expect(a).toBe(b);
-  });
-
-  it('replay(0) returns the initial state untouched', () => {
-    expect(replay(42, addStep, () => 999, 0)).toBe(42);
+  it('keeps the prior state read-only at the StepFn boundary', () => {
+    const step: StepFn<{ readonly value: number }, void> = (prev) => ({ value: prev.value + 1 });
+    expect(advance({ value: 2 }, 1, undefined, step)).toEqual({ value: 3 });
   });
 });
 
-describe('core/query', () => {
-  it('view() runs a named bag of queries against one state', () => {
+describe('services/history', () => {
+  const definition: RunDefinition<number, number> = {
+    initialState: 0,
+    step: addStep,
+    inputSource: (tick) => tick,
+  };
+
+  it('replays from tick 1 through the requested tick', () => {
+    expect(replay(definition, 3)).toBe(1 + 2 + 3);
+    expect(replay(definition, 5)).toBe(1 + 2 + 3 + 4 + 5);
+    expect(replay(definition, 0)).toBe(0);
+  });
+
+  it('is deterministic across repeated calls', () => {
+    expect(replay(definition, 10)).toBe(replay(definition, 10));
+  });
+
+  it('binds the run definition fields at history creation', () => {
+    const mutableDefinition = {
+      initialState: 0,
+      step: addStep,
+      inputSource: (tick: number) => tick,
+    };
+    const history = createHistory(mutableDefinition);
+
+    mutableDefinition.initialState = 100;
+    mutableDefinition.step = () => 999;
+    mutableDefinition.inputSource = () => 0;
+
+    expect(history.stateAt(3)).toBe(6);
+  });
+
+  it('copies a data-shaped initial state for the history snapshot', () => {
+    const initialState = { value: 0 };
+    const history = createHistory({
+      initialState,
+      step: (prev: Readonly<typeof initialState>) => ({ value: prev.value + 1 }),
+    });
+
+    initialState.value = 100;
+
+    expect(history.stateAt(1)).toEqual({ value: 1 });
+  });
+});
+
+describe('presentation/view', () => {
+  it('runs a named bag of queries against one state', () => {
     const state = { level: 7, gate: true };
     const result = view(state, 3, {
       doubled: (s: typeof state) => s.level * 2,

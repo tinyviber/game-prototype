@@ -12,8 +12,15 @@ export type Tick = number;
  * given the previous tick's state and this tick's intent, deterministically produce the next state.
  * No Math.random(), no Date.now(), no reading anything outside (prev, tick, intent).
  */
-export type StepFn<S, I> = (prev: S, tick: Tick, intent: I) => S;
+export type StepFn<S, I> = (prev: Readonly<S>, tick: Tick, intent: I) => S;
 
 /** Supplies the intent for a given tick. Kept as a function (not an array) so probes can
  * synthesize intents (e.g. indexing into an authored program) instead of pre-materializing them. */
 export type IntentSource<I> = (tick: Tick) => I;
+
+/** Immutable definition of one authored run. History binds this exact definition. */
+export interface RunDefinition<S, I = void> {
+  readonly initialState: S;
+  readonly step: StepFn<S, I>;
+  readonly inputSource?: IntentSource<I>;
+}

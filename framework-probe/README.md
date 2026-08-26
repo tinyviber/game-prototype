@@ -26,17 +26,17 @@ npm run preview    # 预览最近一次 production build
 | --- | --- | --- |
 | Echo Chamber Bridge | 两条程序在同一共享时钟上逐 tick 前进，要求同 tick PRESS | [echo-chamber.html](./echo-chamber.html) |
 | The Dam That Breathes | 一阶命中阈值规则、连续水流、稳定闩锁和爆坝终态 | [dam.html](./dam.html) |
-| Mimic Moss | 网格传播、路径长度延迟、颜色变换和自主生长 | [mimic-moss.html](./mimic-moss.html) |
+| Mimic Moss | 静态网格传播、路径长度延迟和颜色变换 | [mimic-moss.html](./mimic-moss.html) |
 | The Spore Telegraph | 有向接线、relay/prism/snail 节点、成功或失败终态 | [spore-telegraph.html](./spore-telegraph.html) |
 
 架构结论见 [REPORT.md](./REPORT.md)。
 
 ## 边界说明
 
-- `src/core/` 只包含 `Tick`、纯 `StepFn`/`IntentSource`、逐 tick/replay 内核和显式 query projection；不依赖 PixiJS、DOM 或实时 `deltaMS`。
-- `src/rendering/` 和 `src/services/` 是标准适配层：前者负责 Pixi 宿主与真实时间到离散 tick 的节拍，后者负责 history 服务。
+- `src/core/` 只包含 `Tick`、只读输入的 `StepFn`/`IntentSource`、`RunDefinition` 和单步 `advance`；不依赖 PixiJS、DOM 或实时 `deltaMS`。
+- `src/rendering/` 和 `src/services/` 是标准适配层：前者负责 Pixi 宿主与真实时间到离散 tick 的节拍，后者负责 History replay 与 presentation projection。
 - `src/probes/*/` 是关卡级代码。每个入口在把数据交给 renderer 前显式投影为自己的 `*View`；renderer 不接收对应的 simulation state。
 - Tick 从 1 开始，tick 0 是 reset 后的初始画面。`deltaMS` 只用于积累节拍；一个 ticker 回调中若 onTick 调用 `stop()`，当前 deltaMS 批次不会继续推进后续 tick。
-- Echo 的程序在末尾之后产生 `undefined` no-op，不循环；Dam 爆坝和 Spore 终局会冻结；Moss 通过纯状态和 replay 语义保持可复现。
+- Echo 的程序在末尾之后产生 `undefined` no-op，不循环；Dam 爆坝和 Spore 终局会冻结；Moss 的 authored topology 在一个 run 内静态不变，signal 仍按路径距离延迟传播。
 
 测试命令列在上方，但测试的最终执行与验收由测试代理负责。

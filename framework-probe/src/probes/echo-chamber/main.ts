@@ -2,9 +2,10 @@ import { createPixiHost } from '../../rendering/pixi-host';
 import { createTickDriver } from '../../rendering/tick-driver';
 import { createEchoRenderer, type EchoView } from './render';
 import { mountEchoUi } from './ui';
-import { createEchoStep, echoIntentAt, initialEchoState } from './sim';
-import type { EchoConfig, EchoState, Instr } from './types';
-import { view as projectView } from '../../core/view';
+import { createEchoRun } from './sim';
+import type { EchoState, Instr } from './types';
+import { advance } from '../../core/kernel';
+import { view as projectView } from '../../services/presentation';
 
 async function main(): Promise<void> {
   const stageEl = document.querySelector<HTMLDivElement>('#stage')!;
@@ -24,7 +25,8 @@ async function main(): Promise<void> {
     { plate: livePlate, length: livePlate + 2 },
   );
 
-  let state: EchoState = initialEchoState();
+  let activeRun = createEchoRun({ echoProgram, liveProgram, echoPlate, livePlate });
+  let state: EchoState = activeRun.initialState;
   let maxTick = 0;
 
   function render(tick: number): void {
@@ -41,12 +43,8 @@ async function main(): Promise<void> {
   }
 
   function onTick(tick: number): void {
-    // main.ts computes each tick's intent from the currently authored programs and advances
-    // the kernel by exactly one step — this is the entire "State(t-1) -> Intents -> State(t)"
-    // wiring the brief requires; nothing here is simulation logic.
-    const config: EchoConfig = { echoProgram, liveProgram, echoPlate, livePlate };
     const wasOpen = state.gateOpened;
-    state = createEchoStep(config)(state, tick, echoIntentAt(config)(tick));
+    state = advance(state, tick, activeRun.inputSource!(tick), activeRun.step);
     tickEl.textContent = String(tick);
     render(tick);
     const echoNote = state.echoPressed ? ' Echo PRESSES!' : '';
@@ -63,7 +61,8 @@ async function main(): Promise<void> {
 
   function reset(): void {
     driver.reset();
-    state = initialEchoState();
+    activeRun = createEchoRun({ echoProgram, liveProgram, echoPlate, livePlate });
+    state = activeRun.initialState;
     tickEl.textContent = '0';
     render(0);
     logEl.textContent = 'Press Run to execute Echo and You simultaneously, tick by tick.';

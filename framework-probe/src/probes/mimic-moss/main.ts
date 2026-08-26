@@ -2,9 +2,10 @@ import { createPixiHost } from '../../rendering/pixi-host';
 import { createTickDriver } from '../../rendering/tick-driver';
 import { createMossRenderer, type MossView } from './render';
 import { mountMossUi, type MossTool } from './ui';
-import { createMossStep, initialMossState, mossIntentAt } from './sim';
+import { createMossRun, mossIntentAt } from './sim';
 import { computeLitMap, type LitCell } from './topology';
-import { view } from '../../core/query';
+import { advance } from '../../core/kernel';
+import { view } from '../../services/presentation';
 import type { Direction, MossConfig, MossState, Plant } from './types';
 
 const CELL = 40;
@@ -44,25 +45,22 @@ async function main(): Promise<void> {
       flower: layout.flower,
       fern: layout.fern,
       bounds: layout.bounds,
-      seed: 12345,
-      sproutEveryTicks: 6,
-      sproutChance: 0.18,
-      matureDistance: 3,
       relaxationSteps: 30,
     };
   }
 
-  let state: MossState = initialMossState(configNow());
+  let activeConfig = configNow();
+  let activeRun = createMossRun(activeConfig);
+  let state: MossState = activeRun.initialState;
 
   function logLine(text: string): void {
     logEl.textContent = `${text}\n${logEl.textContent ?? ''}`;
   }
 
-  function draw(tick: number): void {
-    const config = configNow();
+  function draw(tick: number, config: MossConfig = activeConfig): void {
     const v: MossView = view(state, tick, {
-      litNow: (s: MossState, t: number) => {
-        const lit = computeLitMap(s.plants, config.source, config.relaxationSteps);
+      litNow: (_s: MossState, t: number) => {
+        const lit = computeLitMap(config.plants, config.source, config.relaxationSteps);
         const filtered = new Map<string, LitCell>();
         for (const [key, cell] of lit) if (cell.dist <= t) filtered.set(key, cell);
         return filtered;
@@ -70,19 +68,18 @@ async function main(): Promise<void> {
       bloomed: (s: MossState) => s.bloomed,
       spores: (s: MossState) => s.spores,
       explorer: (s: MossState) => ({ x: s.explorerX, y: s.explorerY }),
-      plants: (s: MossState) => s.plants,
+      plants: () => config.plants,
     });
     renderer.render(v);
   }
 
   function onTick(tick: number): void {
-    const config = configNow();
     const wasBloomed = state.bloomed;
-    state = createMossStep(config)(state, tick, mossIntentAt(moveLog)(tick));
+    state = advance(state, tick, mossIntentAt(moveLog)(tick), activeRun.step);
     tickEl.textContent = String(tick);
-    draw(tick);
+    draw(tick, activeConfig);
     if (state.bloomed && !wasBloomed) logLine(`t${tick}: the flower blooms — RED first, then BLUE.`);
-    const atFlower = state.explorerX === config.flower.x && state.explorerY === config.flower.y;
+    const atFlower = state.explorerX === activeConfig.flower.x && state.explorerY === activeConfig.flower.y;
     if (atFlower && state.bloomed) {
       logLine(`t${tick}: you step into the tunnel. WIN`);
       driver.stop();
@@ -99,9 +96,11 @@ async function main(): Promise<void> {
     driver.reset();
     running = false;
     moveLog = [];
-    state = initialMossState(configNow());
+    activeConfig = configNow();
+    activeRun = createMossRun(activeConfig);
+    state = activeRun.initialState;
     tickEl.textContent = '0';
-    draw(0);
+    draw(0, activeConfig);
     logEl.textContent = 'The prism glows red at the far wall. The flower stays dormant.';
   }
 
@@ -124,7 +123,7 @@ async function main(): Promise<void> {
       if (idx >= 0) plants[idx] = { x: cx, y: cy, type };
       else plants.push({ x: cx, y: cy, type });
     }
-    draw(0);
+    draw(0, configNow());
   });
 
   const KEY_DIR: Record<string, Direction> = { ArrowUp: 'U', ArrowDown: 'D', ArrowLeft: 'L', ArrowRight: 'R' };

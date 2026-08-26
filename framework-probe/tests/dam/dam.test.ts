@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDamStep, damIntentAt, initialDamState } from '../../src/probes/dam/sim';
+import { createDamRun, createDamStep, initialDamState } from '../../src/probes/dam/sim';
 import { createHistory } from '../../src/services/history';
 import type { DamConfig } from '../../src/probes/dam/types';
 
@@ -30,7 +30,7 @@ describe('Dam That Breathes — first-match rule scan', () => {
 describe('Dam That Breathes — gate is a forward-monotonic latch', () => {
   // A constant 60%-open sluice settles the reservoir into the 4-6 RPM band and holds it there.
   const config: DamConfig = { rules: [{ below: 1000, opening: 60 }], initialLevel: 48, initialOpening: 0 };
-  const history = createHistory(initialDamState(config), createDamStep(config), damIntentAt);
+  const history = createHistory(createDamRun(config));
 
   it('tick 10 is truthfully still shut — the 8-tick streak cannot possibly have accumulated yet', () => {
     expect(history.stateAt(10).gate).toBe(false);
@@ -55,7 +55,7 @@ describe('Dam That Breathes — gate is a forward-monotonic latch', () => {
 describe('Dam That Breathes — burst is a terminal latch', () => {
   it('a permanently-shut sluice floods the reservoir past the burst level and then freezes', () => {
     const config: DamConfig = { rules: [], initialLevel: 48, initialOpening: 0 };
-    const history = createHistory(initialDamState(config), createDamStep(config), damIntentAt);
+    const history = createHistory(createDamRun(config));
 
     let burstTick = -1;
     for (let t = 1; t <= 150; t++) {
@@ -70,5 +70,17 @@ describe('Dam That Breathes — burst is a terminal latch', () => {
     const muchLater = history.stateAt(burstTick + 20);
     // Frozen, not merely flagged: burst stops the fold entirely (level does not keep changing).
     expect(muchLater).toEqual(atBurst);
+  });
+});
+
+describe('Dam That Breathes — a run owns its authored rule snapshot', () => {
+  it('does not let later rule editing rewrite an existing history', () => {
+    const rules = [{ below: 100, opening: 20 }];
+    const config: DamConfig = { rules, initialLevel: 48, initialOpening: 0 };
+    const history = createHistory(createDamRun(config));
+
+    rules[0]!.opening = 80;
+
+    expect(history.stateAt(1).opening).toBe(20);
   });
 });
