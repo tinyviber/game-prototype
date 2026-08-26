@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Echo Chamber Bridge — framework-probe</title>
+<link rel="stylesheet" href="/src/ui/shared.css" />
+</head>
+<body>
+<header>
+  <h1>⏳ Echo Chamber Bridge</h1>
+  <span class="hint">two lockstep tracks, one shared clock</span>
+  <a href="/index.html">← launcher</a>
+</header>
+<main>
+  <div class="world">
+    <div class="hud">tick <b id="tick">0</b></div>
+    <div id="stage"></div>
+  </div>
+  <div class="panel">
+    <h2>Programs</h2>
+    <p class="hint">Author two programs on one shared clock: Echo (recorded past attempt) and You (this live attempt). The gate opens only if both press their plate on the identical tick.</p>
+    <div id="ui"></div>
+    <h2>Diary</h2>
+    <div id="log"></div>
+  </div>
+</main>
+<script type="module" src="/src/probes/echo-chamber/main.ts"></script>
+</body>
+</html>

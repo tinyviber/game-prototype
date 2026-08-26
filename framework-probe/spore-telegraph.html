@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The Spore Telegraph — framework-probe</title>
+<link rel="stylesheet" href="/src/ui/shared.css" />
+</head>
+<body>
+<header>
+  <h1>🍄 The Spore Telegraph</h1>
+  <span class="hint">directed wiring, relay/prism/snail nodes, terminal success and failure</span>
+  <a href="/index.html">← launcher</a>
+</header>
+<main>
+  <div class="world">
+    <div class="hud">tick <b id="tick">0</b></div>
+    <div id="stage"></div>
+  </div>
+  <div class="panel">
+    <h2>The Fungal Switchboard</h2>
+    <div id="ui"></div>
+    <h2>Log</h2>
+    <div id="log"></div>
+  </div>
+</main>
+<script type="module" src="/src/probes/spore-telegraph/main.ts"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The Dam That Breathes — framework-probe</title>
+<link rel="stylesheet" href="/src/ui/shared.css" />
+</head>
+<body>
+<header>
+  <h1>🌊 The Dam That Breathes</h1>
+  <span class="hint">first-match threshold rules, continuous flux, a monotonic latch</span>
+  <a href="/index.html">← launcher</a>
+</header>
+<main>
+  <div class="world">
+    <div class="hud">tick <b id="tick">0</b></div>
+    <div id="stage"></div>
+  </div>
+  <div class="panel">
+    <h2>The Sluice Rules</h2>
+    <div id="ui"></div>
+    <h2>River Diary</h2>
+    <div id="log"></div>
+  </div>
+</main>
+<script type="module" src="/src/probes/dam/main.ts"></script>
+</body>
+</html>

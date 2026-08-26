@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mimic Moss — framework-probe</title>
+<link rel="stylesheet" href="/src/ui/shared.css" />
+</head>
+<body>
+<header>
+  <h1>🌱 Mimic Moss</h1>
+  <span class="hint">grid propagation, path-length delay, color transformation</span>
+  <a href="/index.html">← launcher</a>
+</header>
+<main>
+  <div class="world">
+    <div class="hud">tick <b id="tick">0</b></div>
+    <div id="stage"></div>
+  </div>
+  <div class="panel">
+    <h2>The Gardener's Tools</h2>
+    <div id="ui"></div>
+    <h2>Garden Diary</h2>
+    <div id="log"></div>
+  </div>
+</main>
+<script type="module" src="/src/probes/mimic-moss/main.ts"></script>
+</body>
+</html>

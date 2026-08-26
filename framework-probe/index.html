@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bounded Framework Implementation Probe</title>
+<link rel="stylesheet" href="/src/ui/shared.css" />
+<style>
+  main { flex-direction: column; }
+  .cards { display: flex; gap: 16px; flex-wrap: wrap; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; width: 240px; text-decoration: none; color: var(--ink); }
+  .card h2 { margin: 0 0 6px; font-size: 15px; text-transform: none; letter-spacing: normal; color: var(--ink); }
+  .card p { font-size: 12px; color: #7a8794; margin: 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Bounded Framework Implementation Probe</h1>
+  <span class="hint">4 heterogeneous probes, 1 shared kernel</span>
+</header>
+<main>
+  <div class="cards">
+    <a class="card" href="/echo-chamber.html">
+      <h2>⏳ Echo Chamber Bridge</h2>
+      <p>Two lockstep tracks, one shared clock, a same-tick press aggregate.</p>
+    </a>
+    <a class="card" href="/dam.html">
+      <h2>🌊 The Dam That Breathes</h2>
+      <p>First-match threshold rules, continuous flux, a monotonic latch, replay history.</p>
+    </a>
+    <a class="card" href="/mimic-moss.html">
+      <h2>🌱 Mimic Moss</h2>
+      <p>Grid propagation, path-length delay, color transformation, autonomous growth.</p>
+    </a>
+    <a class="card" href="/spore-telegraph.html">
+      <h2>🍄 The Spore Telegraph</h2>
+      <p>Directed wiring, relay/prism/snail nodes, terminal success and failure.</p>
+    </a>
+  </div>
+  <p class="hint" style="margin-top:16px;">
+    <a href="/README.md">README</a> · <a href="/REPORT.md">REPORT</a>
+    — architecture, commands, and boundary notes.
+  </p>
+</main>
+</body>
+</html>
