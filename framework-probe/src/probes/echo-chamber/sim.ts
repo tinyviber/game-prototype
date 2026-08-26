@@ -7,9 +7,9 @@ export function initialEchoState(): EchoState {
 
 /**
  * One lane's per-tick rule: MOVE advances (clamped at the plate), PRESS only succeeds while
- * standing exactly on the plate. Intentionally duplicated for the echo/live lanes below rather
- * than promoted to a shared `src/adapters/sequence` module — see REPORT.md "Directive verdict"
- * for why a single two-call-site helper did not clear the extraction bar.
+ * standing exactly on the plate. Kept local rather than promoted to a shared module: it has
+ * exactly two adjacent call sites and no reuse outside this file, so extraction would only
+ * add indirection.
  */
 function stepLane(instr: Instr | undefined, pos: number, plate: number): { pos: number; pressed: boolean } {
   const nextPos = instr === 'MOVE' ? Math.min(plate, pos + 1) : pos;

@@ -27,10 +27,11 @@ export function invert(color: Color): Color {
  * cell's distance is 1 + its best lit neighbor's distance (shortest distance wins, red breaks
  * ties), and a dye plant inverts whatever color it receives. This does NOT depend on tick —
  * "path length becomes delay" is applied afterwards by the caller via `dist <= tick`, which is
- * what makes this a plain post-tick Query rather than persisted simulation state.
+ * what makes this a plain post-tick read rather than persisted simulation state.
  *
- * Bespoke to Moss — see REPORT.md "Topology verdict" for why this stayed private instead of
- * being shared with Spore Telegraph's propagation.
+ * Kept private to Moss: Spore Telegraph propagates pulses along directed wires with per-node
+ * dwell delays — different enough rules that a shared "propagation" module would couple two
+ * unrelated mechanics.
  */
 export function computeLitMap(
   plants: readonly Plant[],

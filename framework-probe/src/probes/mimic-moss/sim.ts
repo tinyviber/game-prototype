@@ -19,8 +19,10 @@ export function initialMossState(): MossState {
 
 export function createMossStep(config: MossConfig): StepFn<MossState, MossIntent> {
   const snapshot = snapshotMossConfig(config);
+  // Topology is static for a bound config, so the light map is solved once here instead of
+  // re-propagated on every tick; only the `dist <= tick` visibility filter remains per-step.
+  const lit = computeLitMap(snapshot.plants, snapshot.source, snapshot.relaxationSteps);
   return (prev, tick) => {
-    const lit = computeLitMap(snapshot.plants, snapshot.source, snapshot.relaxationSteps);
     const litNow = (x: number, y: number) => {
       const cell = lit.get(`${x},${y}`);
       return cell && cell.dist <= tick ? cell : undefined;

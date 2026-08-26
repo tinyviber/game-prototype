@@ -1,3 +1,5 @@
+import { createButton } from '../../ui/shell';
+
 export type MossTool = 'plant' | 'dye' | 'prune';
 
 export interface MossUiHandlers {
@@ -17,14 +19,11 @@ export function mountMossUi(root: HTMLElement, handlers: MossUiHandlers): void {
     { tool: 'prune', label: '\u2702\uFE0F prune' },
   ];
   const buttons = specs.map(({ tool, label }) => {
-    const btn = document.createElement('button');
-    btn.className = 'tool';
-    btn.textContent = label;
-    btn.addEventListener('click', () => {
+    const btn = createButton(label, () => {
       buttons.forEach((b) => b.classList.remove('on'));
       btn.classList.add('on');
       handlers.onToolChange(tool);
-    });
+    }, 'tool');
     return btn;
   });
   buttons[0]!.classList.add('on');
@@ -38,15 +37,10 @@ export function mountMossUi(root: HTMLElement, handlers: MossUiHandlers): void {
 
   const controls = document.createElement('div');
   controls.className = 'controls';
-  const runBtn = document.createElement('button');
-  runBtn.className = 'btn primary';
-  runBtn.textContent = '\u25B6 Grow';
-  runBtn.addEventListener('click', handlers.onRun);
-  const resetBtn = document.createElement('button');
-  resetBtn.className = 'btn';
-  resetBtn.textContent = '\u21BA Reset';
-  resetBtn.addEventListener('click', handlers.onReset);
-  controls.append(runBtn, resetBtn);
+  controls.append(
+    createButton('\u25B6 Grow', handlers.onRun, 'btn primary'),
+    createButton('\u21BA Reset', handlers.onReset),
+  );
 
   root.append(tools, hint, controls);
 }

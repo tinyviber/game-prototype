@@ -1,7 +1,7 @@
 /**
  * Core types shared by every probe. Deliberately tiny: a tick counter and the shape of a
- * pure per-tick transition. Nothing here may import PixiJS or any DOM API (see REPORT.md
- * "Rendering boundary").
+ * pure per-tick transition. Nothing here may import PixiJS or any DOM API: simulation code
+ * must stay runnable headlessly, which is what the whole test suite relies on.
  */
 
 /** A discrete simulation instant. Ticks start at 1; tick 0 is the initial state before any step runs. */

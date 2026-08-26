@@ -1,4 +1,5 @@
 import type { CapType, NodeId } from './types';
+import { createButton } from '../../ui/shell';
 
 export interface SporeUiHandlers {
   onRun(): void;
@@ -37,7 +38,7 @@ export function mountSporeUi(
       select.appendChild(opt);
     }
     select.addEventListener('change', () => {
-      if (select.value) wires[from] = select.value;
+      if (select.value) wires[from] = select.value as NodeId;
       else delete wires[from];
     });
     row.append(label, select);
@@ -50,10 +51,7 @@ export function mountSporeUi(
 
   const capBox = document.createElement('div');
   for (const mushroom of mushrooms) {
-    const capBtn = document.createElement('button');
-    capBtn.className = 'btn';
-    capBtn.textContent = caps[mushroom] ?? 'RELAY';
-    capBtn.addEventListener('click', () => {
+    const capBtn = createButton(caps[mushroom] ?? 'RELAY', () => {
       const current = caps[mushroom] ?? 'RELAY';
       const next = CAP_CYCLE[(CAP_CYCLE.indexOf(current) + 1) % CAP_CYCLE.length]!;
       caps[mushroom] = next;
@@ -64,15 +62,10 @@ export function mountSporeUi(
 
   const controls = document.createElement('div');
   controls.className = 'controls';
-  const runBtn = document.createElement('button');
-  runBtn.className = 'btn primary';
-  runBtn.textContent = 'chantsong \u25B6';
-  runBtn.addEventListener('click', handlers.onRun);
-  const resetBtn = document.createElement('button');
-  resetBtn.className = 'btn';
-  resetBtn.textContent = '\u21BA reset workshop';
-  resetBtn.addEventListener('click', handlers.onReset);
-  controls.append(runBtn, resetBtn);
+  controls.append(
+    createButton('chantsong \u25B6', handlers.onRun, 'btn primary'),
+    createButton('\u21BA reset workshop', handlers.onReset),
+  );
 
   root.append(hint, wireBox, capBox, controls);
 }

@@ -1,16 +1,9 @@
 import type { ThresholdRule } from './types';
+import { createButton } from '../../ui/shell';
 
 export interface DamUiHandlers {
   onRun(): void;
   onReset(): void;
-}
-
-function button(label: string, onClick: () => void): HTMLButtonElement {
-  const btn = document.createElement('button');
-  btn.className = 'btn';
-  btn.textContent = label;
-  btn.addEventListener('click', onClick);
-  return btn;
 }
 
 export function mountDamUi(root: HTMLElement, rules: ThresholdRule[], handlers: DamUiHandlers): void {
@@ -46,7 +39,7 @@ export function mountDamUi(root: HTMLElement, rules: ThresholdRule[], handlers: 
       });
       const l3 = document.createElement('span');
       l3.textContent = '%';
-      const del = button('\u2715', () => {
+      const del = createButton('\u2715', () => {
         rules.splice(idx, 1);
         renderRules();
       });
@@ -56,14 +49,14 @@ export function mountDamUi(root: HTMLElement, rules: ThresholdRule[], handlers: 
   }
   renderRules();
 
-  const addBtn = button('+ rule', () => {
+  const addBtn = createButton('+ rule', () => {
     rules.push({ below: 50, opening: 50 });
     renderRules();
   });
 
   const controls = document.createElement('div');
   controls.className = 'controls';
-  controls.append(button('\u25B6 Run the river', handlers.onRun), button('\u21BA Reset', handlers.onReset));
+  controls.append(createButton('\u25B6 Run the river', handlers.onRun), createButton('\u21BA Reset', handlers.onReset));
 
   root.append(hint, ruleBox, addBtn, controls);
 }

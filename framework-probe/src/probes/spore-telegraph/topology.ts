@@ -38,7 +38,8 @@ export function advancePulses(pulses: readonly Pulse[]): { traveling: Pulse[]; a
 }
 
 /** Spawns this tick's chant beat (if one is due): one broadcast color fanned out to every
- * currently-wired spout. Bespoke to Spore — see REPORT.md "Topology verdict". */
+ * currently-wired spout. Bespoke to Spore: its fixed-period, sequence-indexed schedule has no
+ * counterpart in the other probes. */
 export function spawnBeat(config: SporeConfig, tick: number): Pulse[] {
   const beatIndex = Math.floor((tick - 1) / config.beatEveryTicks);
   if ((tick - 1) % config.beatEveryTicks !== 0 || beatIndex >= config.sequence.length) return [];

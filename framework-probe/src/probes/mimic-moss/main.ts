@@ -1,20 +1,18 @@
 import { createPixiHost } from '../../rendering/pixi-host';
 import { createTickDriver } from '../../rendering/tick-driver';
-import { createMossRenderer, type MossView } from './render';
+import { createMossRenderer } from './render';
 import { mountMossUi, type MossTool } from './ui';
 import { createMossRun } from './sim';
 import { computeLitMap, type LitCell } from './topology';
-import { advance } from '../../core/kernel';
-import { view } from '../../services/presentation';
-import type { MossConfig, MossState, Plant } from './types';
+import { createHistory } from '../../services/history';
+import { mountProbeShell } from '../../ui/shell';
+import type { MossConfig, Plant } from './types';
 
 const CELL = 40;
+const RELAXATION_STEPS = 30;
 
 async function main(): Promise<void> {
-  const stageEl = document.querySelector<HTMLDivElement>('#stage')!;
-  const uiEl = document.querySelector<HTMLDivElement>('#ui')!;
-  const logEl = document.querySelector<HTMLDivElement>('#log')!;
-  const tickEl = document.querySelector<HTMLSpanElement>('#tick')!;
+  const shell = mountProbeShell();
 
   const layout = {
     bounds: { width: 10, height: 6 },
@@ -30,7 +28,7 @@ async function main(): Promise<void> {
   let tool: MossTool = 'plant';
   let running = false;
 
-  const app = await createPixiHost(stageEl, {
+  const app = await createPixiHost(shell.stage, {
     width: layout.bounds.width * CELL + 20,
     height: layout.bounds.height * CELL + 40,
     background: '#eef3e6',
@@ -44,56 +42,50 @@ async function main(): Promise<void> {
       flower: layout.flower,
       fern: layout.fern,
       bounds: layout.bounds,
-      relaxationSteps: 30,
+      relaxationSteps: RELAXATION_STEPS,
     };
   }
 
+  // Topology is static per authoring session: the light map is solved once per edit/reset and
+  // only filtered by `dist <= tick` at draw time — never re-propagated per frame.
   let activeConfig = configNow();
-  let activeRun = createMossRun(activeConfig);
-  let state: MossState = activeRun.initialState;
+  let litMap = computeLitMap(activeConfig.plants, activeConfig.source, activeConfig.relaxationSteps);
 
-  function logLine(text: string): void {
-    logEl.textContent = `${text}\n${logEl.textContent ?? ''}`;
+  function relight(): void {
+    litMap = computeLitMap(activeConfig.plants, activeConfig.source, activeConfig.relaxationSteps);
   }
 
-  function draw(tick: number, config: MossConfig = activeConfig): void {
-    const v: MossView = view(state, tick, {
-      litNow: (_s: MossState, t: number) => {
-        const lit = computeLitMap(config.plants, config.source, config.relaxationSteps);
-        const filtered = new Map<string, LitCell>();
-        for (const [key, cell] of lit) if (cell.dist <= t) filtered.set(key, cell);
-        return filtered;
-      },
-      bloomed: (s: MossState) => s.bloomed,
-      spores: (s: MossState) => s.spores,
-      plants: () => config.plants,
-    });
-    renderer.render(v);
+  // The history is the playback state; draw reads cached timeline entries, never a shadow copy.
+  let history = createHistory(createMossRun(activeConfig));
+
+  function draw(tick: number): void {
+    const s = history.stateAt(tick);
+    const litNow = new Map<string, LitCell>();
+    for (const [key, cell] of litMap) if (cell.dist <= tick) litNow.set(key, cell);
+    renderer.render({ litNow, bloomed: s.bloomed, spores: s.spores, plants });
   }
 
-  function onTick(tick: number): void {
-    const wasBloomed = state.bloomed;
-    state = advance(state, tick, activeRun.inputSource(tick), activeRun.step);
-    tickEl.textContent = String(tick);
-    draw(tick, activeConfig);
-    if (state.bloomed && !wasBloomed) logLine(`t${tick}: the flower blooms — RED first, then BLUE.`);
+  const driver = createTickDriver(app.ticker, 220, (tick) => {
+    const prev = history.stateAt(tick - 1);
+    const next = history.stateAt(tick);
+    shell.showTick(tick);
+    draw(tick);
+    if (next.bloomed && !prev.bloomed) shell.logLine(`t${tick}: the flower blooms — RED first, then BLUE.`);
     if (tick >= 200) {
       driver.stop();
       running = false;
     }
-  }
-
-  const driver = createTickDriver(app.ticker, 220, onTick);
+  });
 
   function reset(): void {
     driver.reset();
     running = false;
     activeConfig = configNow();
-    activeRun = createMossRun(activeConfig);
-    state = activeRun.initialState;
-    tickEl.textContent = '0';
-    draw(0, activeConfig);
-    logEl.textContent = 'The prism glows red at the far wall. The flower stays dormant.';
+    relight();
+    history = createHistory(createMossRun(activeConfig));
+    shell.showTick(0);
+    draw(0);
+    shell.resetLog('The prism glows red at the far wall. The flower stays dormant.');
   }
 
   app.canvas.addEventListener('click', (ev) => {
@@ -115,10 +107,11 @@ async function main(): Promise<void> {
       if (idx >= 0) plants[idx] = { x: cx, y: cy, type };
       else plants.push({ x: cx, y: cy, type });
     }
-    draw(0, configNow());
+    relight();
+    draw(0);
   });
 
-  mountMossUi(uiEl, {
+  mountMossUi(shell.ui, {
     onToolChange(next) {
       tool = next;
     },
