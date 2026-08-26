@@ -6,7 +6,7 @@
 
 | 分层 | 目录 | LOC | 内容 |
 | --- | --- | ---: | --- |
-| Core | `src/core/` | 41 | `Tick`、只读输入的 `StepFn`、`IntentSource`、`RunDefinition` 和单步 `advance`；`view/query` 仅保留兼容 re-export |
+| Core | `src/core/` | 35 | `Tick`、只读输入的 `StepFn`、`IntentSource`、`RunDefinition` 和单步 `advance` |
 | Standard Adapters | `src/rendering/`、`src/services/` | 126 | Pixi 宿主、tick driver、History replay/snapshot 和 presentation projection |
 | Level-Specific | `src/probes/` | 1554 | 四个 probe 各自的 main、simulation、view renderer、UI 和必要的 topology |
 | Shared presentation | `src/ui/shared.css` | 81 | 共享 DOM/UI 样式，不计入三层 TypeScript |
@@ -31,7 +31,7 @@ Core 最终只保留三类不可避免的共性：
 - `types.ts` 定义离散 `Tick`、纯 `StepFn<S, I>` 和按 tick 提供 intent 的 `IntentSource<I>`。
 - `kernel.ts` 只提供单步 `advance(prev, tick, intent, step)`；`RunDefinition` 是一次 authored run 的只读协议。
 - `services/history/` 提供 `replay(definition, tick)` 与 `createHistory(definition)`，绑定 run snapshot 后从 tick 0 重放。
-- `services/presentation/` 提供 `view(state, tick, queries)`。query 在各个 probe 的入口显式声明，输出恰好是 renderer 所需的 `*View`；`src/core/view.ts` 与 `query.ts` 仅保留兼容 re-export。
+- `services/presentation/` 提供 `view(state, tick, queries)`。query 在各个 probe 的入口显式声明，输出恰好是 renderer 所需的 `*View`；Core 不反向依赖 presentation。
 
 这次实现还修正了标准 tick driver 的批处理边界：ticker 回调中的 `while` 同时受 `running` 保护。因此 onTick 在某个 tick 内调用 `stop()` 后，同一 `deltaMS` 不会偷跑后续 tick；真实时间仍然只负责 pacing，simulation 仍然只接收离散 tick。收益是可复现的状态转移、可直接 replay 的历史，以及稳定的 rendering boundary：renderer 只依赖窄的 view，不依赖关卡的 simulation state。
 
@@ -46,7 +46,7 @@ Core 最终只保留三类不可避免的共性：
 
 所有 `StepFn` 都只读取只读的 `(prev, tick, intent)`；没有 `Math.random()`、`Date.now()` 或实时输入进入 simulation。Dam 的河流脉冲是 `sin(tick)` 的纯函数；Echo、Spore、Moss 也完全由 tick、run-owned 配置和状态决定。Moss 的静态配置空间只通过 signal propagation、路径距离和节点颜色变换产生可观察结果。
 
-`RunDefinition<S, I>` 持有 `initialState`、`step` 和可选 `inputSource`；`createHistory` 会复制 data-shaped initial state 并冻结 definition 外壳。Dam、Spore、Moss、Echo 的 `create*Run` 在 run 创建时复制 authored arrays/maps/rules，后续 authoring 修改必须通过 reset/run 创建新的 definition。这样 replay 得到的是该 run 的历史事实，不会读取 live 配置闭包。
+`RunDefinition<S, I>` 持有 `initialState`、`step` 和必填 `inputSource`；`createHistory` 会复制 data-shaped initial state 并冻结 definition 外壳。Dam、Spore、Moss、Echo 的 `create*Run` 在 run 创建时复制 authored arrays/maps/rules，后续 authoring 修改必须通过 reset/run 创建新的 definition。这样 replay 得到的是该 run 的历史事实，不会读取 live 配置闭包。
 
 ### Pixi / DOM 边界
 
@@ -126,7 +126,7 @@ find src -type f \( -name '*.ts' -o -name '*.css' \) -print0 | xargs -0 wc -l
 最终验证证据：
 
 ```text
-npm test -- --no-file-parallelism  -> PASS（6 files/45 tests）
+npm test -- --no-file-parallelism  -> PASS（6 files/43 tests）
 npx tsc --noEmit                   -> PASS
 npm run build                       -> PASS（5 HTML entries）
 static renderer check              -> no match

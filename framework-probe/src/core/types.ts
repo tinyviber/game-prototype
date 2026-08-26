@@ -19,8 +19,8 @@ export type StepFn<S, I> = (prev: Readonly<S>, tick: Tick, intent: I) => S;
 export type IntentSource<I> = (tick: Tick) => I;
 
 /** Immutable definition of one authored run. History binds this exact definition. */
-export interface RunDefinition<S, I = void> {
+export interface RunDefinition<S, I> {
   readonly initialState: S;
   readonly step: StepFn<S, I>;
-  readonly inputSource?: IntentSource<I>;
+  readonly inputSource: IntentSource<I>;
 }

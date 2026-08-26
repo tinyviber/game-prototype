@@ -54,6 +54,7 @@ describe('services/history', () => {
     const history = createHistory({
       initialState,
       step: (prev: Readonly<typeof initialState>) => ({ value: prev.value + 1 }),
+      inputSource: () => undefined,
     });
 
     initialState.value = 100;

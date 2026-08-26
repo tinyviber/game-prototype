@@ -63,7 +63,7 @@ async function main(): Promise<void> {
   }
 
   function onTick(tick: number): void {
-    state = advance(state, tick, activeRun.inputSource?.(tick), activeRun.step);
+    state = advance(state, tick, activeRun.inputSource(tick), activeRun.step);
     tickEl.textContent = String(tick);
     render(tick);
     if (state.ended) {

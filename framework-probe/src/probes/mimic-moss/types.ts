@@ -10,8 +10,6 @@ export interface Plant extends Point {
   readonly type: PlantType;
 }
 
-export type Direction = 'U' | 'D' | 'L' | 'R';
-
 export interface MossConfig {
   readonly plants: readonly Plant[];
   readonly source: Point & { readonly color: Color };
@@ -27,10 +25,6 @@ export interface MossState {
   readonly firstColor: Color | null;
   readonly secondColor: Color | null;
   readonly bloomed: boolean;
-  readonly explorerX: number;
-  readonly explorerY: number;
 }
 
-export interface MossIntent {
-  readonly move?: Direction;
-}
+export type MossIntent = void;

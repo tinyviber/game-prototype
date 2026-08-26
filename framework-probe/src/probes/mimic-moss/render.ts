@@ -7,7 +7,6 @@ export interface MossView {
   readonly litNow: ReadonlyMap<string, LitCell>;
   readonly bloomed: boolean;
   readonly spores: number;
-  readonly explorer: Point;
   readonly plants: readonly Plant[];
 }
 
@@ -52,9 +51,6 @@ export function createMossRenderer(app: Application, layout: MossLayout) {
   const flowerG = new Graphics();
   root.addChild(flowerG);
 
-  const explorerG = new Graphics().circle(0, 0, 10).fill(0x37c8a5);
-  root.addChild(explorerG);
-
   const sporesText = new Text({ text: '', style: { fill: 0xb98b4a, fontSize: 12 } });
   sporesText.y = layout.bounds.height * CELL + 6;
   root.addChild(sporesText);
@@ -78,9 +74,6 @@ export function createMossRenderer(app: Application, layout: MossLayout) {
       const flx = layout.flower.x * CELL + CELL / 2;
       const fly = layout.flower.y * CELL + CELL / 2;
       flowerG.clear().circle(flx, fly, view.bloomed ? 14 : 8).fill(view.bloomed ? 0xf28bb2 : 0x9aa8a0);
-
-      explorerG.x = view.explorer.x * CELL + CELL / 2;
-      explorerG.y = view.explorer.y * CELL + CELL / 2;
 
       sporesText.text = view.spores > 0 ? `spores: ${view.spores}` : '';
     },

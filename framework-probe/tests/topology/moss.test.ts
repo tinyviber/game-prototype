@@ -123,7 +123,7 @@ describe('Mimic Moss — the fern is a hazard that resets in-progress color memo
       flower: { x: 2, y: 0 },
       fern: { x: 0, y: 2 },
     };
-    const atTickOne = createMossStep(config)(initialMossState(), 1, {});
+    const atTickOne = createMossStep(config)(initialMossState(), 1, undefined);
 
     expect(atTickOne.spores).toBeGreaterThan(0);
     expect(atTickOne.firstColor).toBeNull();
@@ -163,7 +163,7 @@ describe('Mimic Moss — the fern is a hazard that resets in-progress color memo
   });
 });
 
-describe('Mimic Moss — spore decay and explorer movement', () => {
+describe('Mimic Moss — spore decay', () => {
   it('spores drain by exactly one per tick once the fern is dark again', () => {
     const config: MossConfig = {
       ...baseConfig,
@@ -172,48 +172,7 @@ describe('Mimic Moss — spore decay and explorer movement', () => {
       flower: { x: 60, y: 60 },
       fern: { x: 50, y: 50 },
     };
-    const next = createMossStep(config)({ ...initialMossState(), spores: 3 }, 5, {});
+    const next = createMossStep(config)({ ...initialMossState(), spores: 3 }, 5, undefined);
     expect(next.spores).toBe(2);
-  });
-
-  it('keeps the explorer inside all four boundaries', () => {
-    const config: MossConfig = {
-      ...baseConfig,
-      bounds: { width: 2, height: 2 },
-      plants: [],
-      source: { x: 0, y: 0, color: 'R' },
-      flower: { x: 10, y: 10 },
-      fern: { x: 10, y: 10 },
-    };
-    const step = createMossStep(config);
-    let state = initialMossState();
-
-    state = step(state, 1, { move: 'L' });
-    state = step(state, 2, { move: 'U' });
-    state = step(state, 3, { move: 'R' });
-    state = step(state, 4, { move: 'D' });
-    state = step(state, 5, { move: 'R' });
-    state = step(state, 6, { move: 'D' });
-
-    expect({ x: state.explorerX, y: state.explorerY }).toEqual({ x: 1, y: 1 });
-  });
-
-  it('blocks a dormant flower but allows entry when bloom is already true', () => {
-    const config: MossConfig = {
-      ...baseConfig,
-      bounds: { width: 3, height: 1 },
-      plants: [],
-      source: { x: 0, y: 0, color: 'R' },
-      flower: { x: 1, y: 0 },
-      fern: { x: 2, y: 0 },
-    };
-    const step = createMossStep(config);
-    const initial = initialMossState();
-
-    const blocked = step(initial, 1, { move: 'R' });
-    const entered = step({ ...initial, bloomed: true }, 1, { move: 'R' });
-
-    expect({ x: blocked.explorerX, y: blocked.explorerY }).toEqual({ x: 0, y: 0 });
-    expect({ x: entered.explorerX, y: entered.explorerY }).toEqual({ x: 1, y: 0 });
   });
 });

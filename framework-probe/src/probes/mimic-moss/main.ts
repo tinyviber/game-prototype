@@ -2,11 +2,11 @@ import { createPixiHost } from '../../rendering/pixi-host';
 import { createTickDriver } from '../../rendering/tick-driver';
 import { createMossRenderer, type MossView } from './render';
 import { mountMossUi, type MossTool } from './ui';
-import { createMossRun, mossIntentAt } from './sim';
+import { createMossRun } from './sim';
 import { computeLitMap, type LitCell } from './topology';
 import { advance } from '../../core/kernel';
 import { view } from '../../services/presentation';
-import type { Direction, MossConfig, MossState, Plant } from './types';
+import type { MossConfig, MossState, Plant } from './types';
 
 const CELL = 40;
 
@@ -28,7 +28,6 @@ async function main(): Promise<void> {
     { x: 2, y: 3, type: 'moss' },
   ];
   let tool: MossTool = 'plant';
-  let moveLog: { tick: number; move: Direction }[] = [];
   let running = false;
 
   const app = await createPixiHost(stageEl, {
@@ -67,7 +66,6 @@ async function main(): Promise<void> {
       },
       bloomed: (s: MossState) => s.bloomed,
       spores: (s: MossState) => s.spores,
-      explorer: (s: MossState) => ({ x: s.explorerX, y: s.explorerY }),
       plants: () => config.plants,
     });
     renderer.render(v);
@@ -75,16 +73,11 @@ async function main(): Promise<void> {
 
   function onTick(tick: number): void {
     const wasBloomed = state.bloomed;
-    state = advance(state, tick, mossIntentAt(moveLog)(tick), activeRun.step);
+    state = advance(state, tick, activeRun.inputSource(tick), activeRun.step);
     tickEl.textContent = String(tick);
     draw(tick, activeConfig);
     if (state.bloomed && !wasBloomed) logLine(`t${tick}: the flower blooms — RED first, then BLUE.`);
-    const atFlower = state.explorerX === activeConfig.flower.x && state.explorerY === activeConfig.flower.y;
-    if (atFlower && state.bloomed) {
-      logLine(`t${tick}: you step into the tunnel. WIN`);
-      driver.stop();
-      running = false;
-    } else if (tick >= 200) {
+    if (tick >= 200) {
       driver.stop();
       running = false;
     }
@@ -95,7 +88,6 @@ async function main(): Promise<void> {
   function reset(): void {
     driver.reset();
     running = false;
-    moveLog = [];
     activeConfig = configNow();
     activeRun = createMossRun(activeConfig);
     state = activeRun.initialState;
@@ -124,16 +116,6 @@ async function main(): Promise<void> {
       else plants.push({ x: cx, y: cy, type });
     }
     draw(0, configNow());
-  });
-
-  const KEY_DIR: Record<string, Direction> = { ArrowUp: 'U', ArrowDown: 'D', ArrowLeft: 'L', ArrowRight: 'R' };
-  window.addEventListener('keydown', (ev) => {
-    if (!running) return;
-    const dir = KEY_DIR[ev.key];
-    if (!dir) return;
-    ev.preventDefault();
-    // Recorded as a sparse intent log so replay-from-tick-0 can reproduce a live run exactly.
-    moveLog.push({ tick: Number(tickEl.textContent) + 1, move: dir });
   });
 
   mountMossUi(uiEl, {

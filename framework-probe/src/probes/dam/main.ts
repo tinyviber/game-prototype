@@ -44,7 +44,7 @@ async function main(): Promise<void> {
 
   function onTick(tick: number): void {
     const wasGate = state.gate;
-    state = advance(state, tick, activeRun.inputSource?.(tick), activeRun.step);
+    state = advance(state, tick, activeRun.inputSource(tick), activeRun.step);
     tickEl.textContent = String(tick);
     render(tick);
     if (state.gate && !wasGate) logLine(`t${tick}: the wheel hums steady — the gate grinds OPEN.`);

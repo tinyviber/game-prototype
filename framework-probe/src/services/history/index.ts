@@ -13,9 +13,8 @@ function snapshotInitialState<S>(initialState: S): S {
 /** Replays one run definition from tick 0; replay is a History service, not a core primitive. */
 export function replay<S, I>(definition: RunDefinition<S, I>, targetTick: Tick): S {
   let state = definition.initialState;
-  const inputSource = definition.inputSource ?? (() => undefined as I);
   for (let t = 1; t <= targetTick; t++) {
-    state = advance(state, t, inputSource(t), definition.step);
+    state = advance(state, t, definition.inputSource(t), definition.step);
   }
   return state;
 }

@@ -44,7 +44,7 @@ async function main(): Promise<void> {
 
   function onTick(tick: number): void {
     const wasOpen = state.gateOpened;
-    state = advance(state, tick, activeRun.inputSource!(tick), activeRun.step);
+    state = advance(state, tick, activeRun.inputSource(tick), activeRun.step);
     tickEl.textContent = String(tick);
     render(tick);
     const echoNote = state.echoPressed ? ' Echo PRESSES!' : '';
