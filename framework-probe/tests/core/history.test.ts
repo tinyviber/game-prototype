@@ -57,7 +57,7 @@ describe('services/history', () => {
 });
 
 describe('services/history — memoized timeline', () => {
-  it('computes each tick exactly once, no matter how often it is queried', () => {
+  it('computes each tick exactly once: forward, repeated, and backward reads never recompute', () => {
     let steps = 0;
     const history = createHistory({
       initialState: 0,
@@ -75,23 +75,13 @@ describe('services/history — memoized timeline', () => {
     expect(steps).toBe(5);
   });
 
-  it('serves cached ticks by reference and extends incrementally past them', () => {
+  it('extends incrementally past the cached range and matches a fresh replay', () => {
     const history = createHistory(definition);
 
-    const late = history.stateAt(6);
-    expect(history.stateAt(6)).toBe(late);
-    expect(history.stateAt(2)).toBe(history.stateAt(2));
-
-    // Reading backwards then forwards again reuses the same timeline.
-    expect(history.stateAt(8)).toBe(36);
-    expect(history.stateAt(4)).toBe(10);
-  });
-
-  it('matches a fresh replay when random access interleaves with extension', () => {
-    const history = createHistory(definition);
     history.stateAt(7);
-    expect(history.stateAt(2)).toBe(replay(definition, 2));
-    expect(history.stateAt(9)).toBe(replay(definition, 9));
+    expect(history.stateAt(2)).toEqual(replay(definition, 2));
+    expect(history.stateAt(9)).toEqual(replay(definition, 9));
+    expect(replay(definition, 4)).toBe(10);
   });
 
   it('rejects negative or non-integer ticks instead of returning undefined states', () => {

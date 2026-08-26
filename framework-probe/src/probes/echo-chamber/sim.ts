@@ -52,5 +52,5 @@ export function createEchoRun(config: EchoConfig): RunDefinition<EchoState, Echo
 }
 
 /** Same-tick aggregate: both lanes are ordinary current-tick fields, so "did both press right
- * now" needs no new primitive — it is just a query over State(t). */
-export const bothPressedThisTick = (state: EchoState): boolean => state.echoPressed && state.livePressed;
+ * now" needs no new primitive — it is just a read over State(t). */
+export const bothPressedThisTick = (state: Readonly<EchoState>): boolean => state.echoPressed && state.livePressed;
