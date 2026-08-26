@@ -6,19 +6,19 @@
 
 | 分层 | 目录 | LOC | 内容 |
 | --- | --- | ---: | --- |
-| Core | `src/core/` | 35 | `Tick`、只读输入的 `StepFn`、`IntentSource`、`RunDefinition` 和单步 `advance` |
-| Standard Adapters | `src/rendering/`、`src/services/` | 126 | Pixi 宿主、tick driver、History replay/snapshot 和 presentation projection |
-| Level-Specific | `src/probes/` | 1554 | 四个 probe 各自的 main、simulation、view renderer、UI 和必要的 topology |
+| Protocol types | `src/core/` | 26 | `Tick`、只读输入的 `StepFn`/`IntentSource`、`RunDefinition`——只有类型，没有可执行代码 |
+| Runtime & rendering services | `src/services/history/`、`src/rendering/`、`src/ui/shell.ts` | 156 | memoized timeline 运行时、Pixi 宿主、tick driver、共享 DOM shell |
+| Level-Specific | `src/probes/` | 1426 | 四个 probe 各自的 main、simulation、view renderer、UI 和必要的 topology |
 | Shared presentation | `src/ui/shared.css` | 81 | 共享 DOM/UI 样式，不计入三层 TypeScript |
-| **TypeScript 合计** | `src/**/*.ts` | **1721** | Core + Standard Adapters + Level-Specific |
-| **src 合计** | `src/` | **1802** | TypeScript 加共享 CSS |
+| **TypeScript 合计** | `src/**/*.ts` | **1608** | Protocol types + services + Level-Specific |
+| **src 合计** | `src/` | **1689** | TypeScript 加共享 CSS |
 
-按 probe 的 Level-Specific 明细是：Echo 292 LOC、Dam 304 LOC、Mimic Moss 534 LOC、Spore 421 LOC。数字由下面的命令生成，便于复核：
+按 probe 的 Level-Specific 明细是：Echo 277 LOC、Dam 296 LOC、Mimic Moss 415 LOC、Spore 438 LOC。数字由下面的命令生成，便于复核：
 
 ```bash
 cd /Users/wj/Documents/repos/game-prototype/framework-probe
 find src/core -type f -name '*.ts' -print0 | xargs -0 wc -l
-find src/rendering src/services -type f -name '*.ts' -print0 | xargs -0 wc -l
+find src/services src/rendering src/ui -type f -name '*.ts' -print0 | xargs -0 wc -l
 find src/probes -type f -name '*.ts' -print0 | xargs -0 wc -l
 find src -type f -name '*.ts' -print0 | xargs -0 wc -l
 find src -type f \( -name '*.ts' -o -name '*.css' \) -print0 | xargs -0 wc -l
@@ -26,14 +26,14 @@ find src -type f \( -name '*.ts' -o -name '*.css' \) -print0 | xargs -0 wc -l
 
 ## 2. Core 变更及收益
 
-Core 最终只保留三类不可避免的共性：
+Core 最终只剩一组协议类型，不再包含任何可执行代码：
 
-- `types.ts` 定义离散 `Tick`、纯 `StepFn<S, I>` 和按 tick 提供 intent 的 `IntentSource<I>`。
-- `kernel.ts` 只提供单步 `advance(prev, tick, intent, step)`；`RunDefinition` 是一次 authored run 的只读协议。
-- `services/history/` 提供 `replay(definition, tick)` 与 `createHistory(definition)`，绑定 run snapshot 后从 tick 0 重放。
-- `services/presentation/` 提供 `view(state, tick, queries)`。query 在各个 probe 的入口显式声明，输出恰好是 renderer 所需的 `*View`；Core 不反向依赖 presentation。
+- `types.ts` 定义离散 `Tick`、纯 `StepFn<S, I>`、按 tick 提供 intent 的 `IntentSource<I>`，以及一次 authored run 的只读协议 `RunDefinition`。
+- 单步包装 `advance()` 已删除：它只是 `step(...)` 的一行别名，只提供词汇不提供语义。
+- `services/presentation/view()` 已删除：各 probe 的 main 直接构造 renderer 所需的字面量 view 对象，比通用 query bag 更直白。
+- 真正执行游戏的最小运行时原语是 `services/history/createHistory(definition)`：绑定一个 RunDefinition 后增量执行并 memoize 整条 timeline。前进一拍恰好调用一次 step；重复或回退读取不会重算；越界读取从最后缓存的 tick 续算而非从头重放；非法 tick（负数/非整数）抛 `RangeError`。返回值是与 `StepFn` 的 `prev` 同强度的浅只读视图；memoization 承诺的是"不重算"这一行为，返回对象的 identity 不是契约。
 
-这次实现还修正了标准 tick driver 的批处理边界：ticker 回调中的 `while` 同时受 `running` 保护。因此 onTick 在某个 tick 内调用 `stop()` 后，同一 `deltaMS` 不会偷跑后续 tick；真实时间仍然只负责 pacing，simulation 仍然只接收离散 tick。收益是可复现的状态转移、可直接 replay 的历史，以及稳定的 rendering boundary：renderer 只依赖窄的 view，不依赖关卡的 simulation state。
+这次实现保留了标准 tick driver 的批处理边界：ticker 回调中的 `while` 同时受 `running` 保护。因此 onTick 在某个 tick 内调用 `stop()` 后，同一 `deltaMS` 不会偷跑后续 tick；真实时间仍然只负责 pacing，simulation 仍然只接收离散 tick。收益是可复现的状态转移、一条可随机访问的 memoized 历史，以及稳定的 rendering boundary：renderer 只依赖窄的 view 字面量，不依赖关卡的 simulation state。
 
 四个 probe 的机制覆盖如下：
 
@@ -46,11 +46,11 @@ Core 最终只保留三类不可避免的共性：
 
 所有 `StepFn` 都只读取只读的 `(prev, tick, intent)`；没有 `Math.random()`、`Date.now()` 或实时输入进入 simulation。Dam 的河流脉冲是 `sin(tick)` 的纯函数；Echo、Spore、Moss 也完全由 tick、run-owned 配置和状态决定。Moss 的静态配置空间只通过 signal propagation、路径距离和节点颜色变换产生可观察结果。
 
-`RunDefinition<S, I>` 持有 `initialState`、`step` 和必填 `inputSource`；`createHistory` 会复制 data-shaped initial state 并冻结 definition 外壳。Dam、Spore、Moss、Echo 的 `create*Run` 在 run 创建时复制 authored arrays/maps/rules，后续 authoring 修改必须通过 reset/run 创建新的 definition。这样 replay 得到的是该 run 的历史事实，不会读取 live 配置闭包。
+`RunDefinition<S, I>` 持有 `initialState`、`step` 和必填 `inputSource`；`createHistory` 会复制 data-shaped initial state 并冻结 definition 外壳。Dam、Spore、Moss、Echo 的 `create*Run` 在 run 创建时复制 authored arrays/maps/rules，后续 authoring 修改必须通过 reset/run 创建新的 definition。这样 timeline 得到的是该 run 的历史事实，不会读取 live 配置闭包。
 
 ### Pixi / DOM 边界
 
-`src/core/` 不导入 PixiJS 或 DOM，也不读取 `deltaMS`。唯一创建 Pixi `Application` 的位置是 `src/rendering/pixi-host.ts`；`src/rendering/tick-driver.ts` 只把 `deltaMS` 转成离散 tick。各 probe 的 `main.ts` 可以读取 DOM、注册键盘/鼠标和驱动 simulation，但在调用 renderer 前必须通过显式 queries 得到 `EchoView`、`DamView`、`SporeView` 或 `MossView`。各 `render.ts` 只消费 view（Spore 另接固定的 config/layout），所以 presentation 不反向依赖 simulation state 结构。
+`src/core/` 不导入 PixiJS 或 DOM，也不读取 `deltaMS`。唯一创建 Pixi `Application` 的位置是 `src/rendering/pixi-host.ts`；`src/rendering/tick-driver.ts` 只把 `deltaMS` 转成离散 tick。各 probe 的 `main.ts` 可以读取 DOM、注册输入事件和驱动 playback，但在调用 renderer 前直接构造 `EchoView`、`DamView`、`SporeView` 或 `MossView` 的字面量对象——状态一律来自 history timeline 的只读读取。各 `render.ts` 只消费 view（Spore 另接固定的 config/layout），所以 presentation 不反向依赖 simulation state 结构。`src/ui/shell.ts` 集中了 `#stage/#ui/#log/#tick` 的 DOM 编排和共享按钮工厂，是 probe 页面接触页面脚手架的唯一位置。
 
 ## 3. Directive：Option A / B / C
 
@@ -86,7 +86,7 @@ Topology 属于 Level-Specific，而不是 Core 或 Standard Adapters。
 
 ## 6. Minimal Framework 最终判定与过度抽象
 
-判定：Minimal Framework 足够。四个异质 probe 都能使用同一组最小 Core contracts、同一 Pixi host/tick driver、History service 和 presentation helper，同时每个 probe 仍能保留自己的 simulation、topology、UI 和 renderer。共享层只承载可证明的共性：纯逐 tick 转移、run snapshot/replay、显式 view projection、Pixi 宿主和真实时间 pacing。
+判定：Minimal Framework 足够。四个异质 probe 都能使用同一组最小 Core 协议类型、同一个 memoized timeline 运行时、同一 Pixi host/tick driver 和共享 DOM shell，同时每个 probe 仍能保留自己的 simulation、topology、UI 和 renderer。共享层只承载可证明的共性：纯逐 tick 转移协议、run snapshot 与 memoized 随机访问历史、Pixi 宿主和真实时间 pacing。
 
 最终删除/不保留的过度抽象包括：
 
@@ -94,7 +94,8 @@ Topology 属于 Level-Specific，而不是 Core 或 Standard Adapters。
 - 通用 `Directive`、Directive adapter 或 Proposal pipeline；
 - 通用 `Proposal-Arbitration`；
 - 通用 `RunMetaState`；
-- 试图把 Echo 的 sequence 行为推广成 `src/adapters/sequence` 的共享模块。
+- 试图把 Echo 的 sequence 行为推广成 `src/adapters/sequence` 的共享模块；
+- 单步包装 `advance()`（一行别名）与 presentation 的 `view()` query bag（PR #2 中删除）。
 
 最终源码中不存在这些框架概念；只有各 probe 内部必要的局部函数（例如 Dam 的规则扫描和 Spore 的 pulse forwarding）。这让 Core 保持可解释、无 Pixi/DOM 依赖，且没有为了“可能的第五个 probe”提前支付抽象成本。
 
@@ -133,3 +134,39 @@ static renderer check              -> no match
 ```
 
 没有修改 package scripts、HTML 入口或依赖版本；通用 Topology、通用 Directive/Proposal-Arbitration、通用 `RunMetaState`、通用 History arbitration、Pixi/DOM 进入 Core 仍不在本轮 write scope 内。
+
+## 9. Follow-up 轮（PR #2）：从 ceremony 到 primitives
+
+对上一轮产物逐行 review 后的修正轮。六个 finding，六个修复，净减约 18 行：
+
+1. 删除单步包装 `advance()`（`src/core/kernel.ts` 整体移除）——它只是 `step(...)` 的一行别名。
+2. 删除 `services/presentation/view()`——各 main 直接构造 renderer 所需的字面量 view 对象；Moss 的 light map 从"每 tick 在 step 内重算 + 每帧在 draw 内重算"提升为 config 绑定期各解一次。
+3. `createHistory` 升级为 memoized incremental timeline，并成为四个 main 的 playback 原语：渲染状态一律从 timeline 只读读取。此前它是"只被测试使用的 service"，且每次 `stateAt` 从 tick 0 重放（循环调用即 O(t²)）。
+4. 抽取 `src/ui/shell.ts`：`#stage/#ui/#log/#tick` 编排、tick 展示与 log 追加此前被原样复制了四份，而两处调用的领域 helper 反而被刻意保留在本地——去重政策恢复一致：机械重复的 DOM choreography 归一处，gameplay 语义留在拥有它的 simulation 里。
+5. 所有设计决策注释改为自洽，删除对 REPORT.md 的指针和对不存在目录的引用。
+6. 删除 Echo 程序编辑器的 no-op `onChange` 回调。
+
+Review 二轮补充的契约修复：`History.stateAt()`/`replay()` 对外返回 `Readonly<S>`（与 `StepFn` 收到的 `prev` 同强度的浅只读），堵住"调用方改写缓存对象 → 污染后续 timeline 计算"的类型层漏洞；同时删除把对象 identity 固化为 API 契约的测试——memoization 承诺的是不重算行为（由 step 计数断言覆盖），identity 只是实现细节。
+
+本轮结束后的最终形态：
+
+```text
+CORE PROTOCOL      src/core/types.ts          Tick / StepFn / IntentSource / RunDefinition
+RUNTIME SERVICE    src/services/history/      绑定 RunDefinition；增量执行；memoized timeline；随机访问
+PACING             src/rendering/tick-driver  deltaMS -> 离散 tick
+PRESENTATION       src/rendering/pixi-host    唯一 Application 构造点
+                   src/ui/shell.ts            共享 DOM 编排 + 按钮工厂
+                   各 render.ts               只消费字面量 view 对象
+LEVEL-SPECIFIC     src/probes/*/              simulation / topology / authoring UI / main
+```
+
+注意：已经不存在"simulation kernel 文件"。Core 本质只剩一组协议类型，执行游戏的最小运行时原语是 `History<RunDefinition>`。
+
+最终验证证据：
+
+```text
+npx vitest run                     -> PASS（6 files/44 tests）
+npx tsc --noEmit                   -> PASS
+npm run build                      -> PASS（5 HTML entries）
+rg "advance|presentation|REPORT\.md|adapters" src tests -> 仅剩英文词义匹配，无残留引用
+```

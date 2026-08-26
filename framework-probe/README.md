@@ -1,6 +1,6 @@
 # framework-probe
 
-一个由四个异质小关卡组成的最小框架探针：它们共享确定性的逐 tick 内核和通用的 Pixi 时钟宿主，但保留各自的 simulation、topology、UI 和 renderer 语义。
+一个由四个异质小关卡组成的最小框架探针：它们共享一套极薄的确定性 run 协议（纯类型定义 + 一个 memoized timeline 运行时）和通用的 Pixi 节拍宿主，但保留各自的 simulation、topology、UI 和 renderer 语义。
 
 ## 安装与运行
 
@@ -33,9 +33,11 @@ npm run preview    # 预览最近一次 production build
 
 ## 边界说明
 
-- `src/core/` 只包含 `Tick`、只读输入的 `StepFn`/`IntentSource`、`RunDefinition` 和单步 `advance`；不依赖 PixiJS、DOM 或实时 `deltaMS`。
-- `src/rendering/` 和 `src/services/` 是标准适配层：前者负责 Pixi 宿主与真实时间到离散 tick 的节拍，后者负责 History replay 与 presentation projection。
-- `src/probes/*/` 是关卡级代码。每个入口在把数据交给 renderer 前显式投影为自己的 `*View`；renderer 不接收对应的 simulation state。
+- `src/core/` 只剩协议类型：`Tick`、只读输入的 `StepFn`/`IntentSource`、`RunDefinition`。没有任何可执行代码，也不依赖 PixiJS、DOM 或实时 `deltaMS`。
+- `src/services/history/` 是唯一的运行时服务：绑定一个 `RunDefinition`，增量执行并 memoize 整条 timeline。前进一拍恰好调用一次 step，重复或回退读取不会重算；`stateAt(tick)` 返回浅只读视图。四个入口的播放状态都从它读取。
+- `src/rendering/` 负责两件事：唯一创建 Pixi `Application` 的宿主，以及把真实 `deltaMS` 切成离散 tick 的节拍器。
+- `src/ui/shell.ts` 提供 `#stage/#ui/#log/#tick` 的 DOM 编排与共享按钮工厂；各 probe 的 `ui.ts` 只拼装自己的控件。
+- `src/probes/*/` 是关卡级代码。每个入口的 main 直接构造 renderer 所需的字面量 view 对象；renderer 不接收对应的 simulation state。
 - Tick 从 1 开始，tick 0 是 reset 后的初始画面。`deltaMS` 只用于积累节拍；一个 ticker 回调中若 onTick 调用 `stop()`，当前 deltaMS 批次不会继续推进后续 tick。
 - Echo 的程序在末尾之后产生 `undefined` no-op，不循环；Dam 爆坝和 Spore 终局会冻结；Moss 的 authored topology 在一个 run 内静态不变，signal 仍按路径距离延迟传播。
 
